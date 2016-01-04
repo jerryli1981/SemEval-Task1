@@ -184,24 +184,17 @@ function LSTMSim:new_sim_module_conv1d()
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
   
-    
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
-    
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
     :add(nn.Tanh())
     :add(nn.TemporalMaxPooling(pool_kw2, pool_dw2))
 
-    --:add(nn.Reshape(mlp_input_dim2))
-    --:add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
-    --:add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
-    
-    :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-
+    :add(nn.Reshape(mlp_input_dim2))
+    :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
     
     :add(nn.Sigmoid()) 
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
