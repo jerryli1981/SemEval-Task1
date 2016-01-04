@@ -201,6 +201,8 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Reshape(mlp_input_dim))
     :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+
+    
     :add(nn.Sigmoid()) 
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
