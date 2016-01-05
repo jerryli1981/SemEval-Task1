@@ -127,7 +127,7 @@ if __name__ == '__main__':
         os.path.join(lib_dir, 'stanford-parser/stanford-parser-3.5.2-models.jar')])
 
     # split into separate files
-    split(os.path.join(data_dir, 'SICK_train.txt'), train_dir)
+    split(os.path.join(data_dir, 'SICK_train_rich.txt'), train_dir)
     split(os.path.join(data_dir, 'SICK_trial.txt'), dev_dir)
     split(os.path.join(data_dir, 'SICK_test_annotated.txt'), test_dir)
 
