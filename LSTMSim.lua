@@ -225,6 +225,14 @@ function LSTMSim:train(dataset)
     for j=1, batch_size do
       local sim = dataset.labels[indices[i+j-1]] * (self.num_classes-1)+1
       local ceil, floor = math.ceil(sim), math.floor(sim)
+
+      if ceil ==0 then
+        ceil=1
+      end
+      if floor ==0 then
+        floor=1
+      end
+
       if ceil == floor then
         targets[{j, floor}] = 1
       else
