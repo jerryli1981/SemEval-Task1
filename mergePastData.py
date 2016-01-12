@@ -22,6 +22,7 @@ with open(os.path.join(data_dir, 'SICK_train_rich.txt'), 'w') as f:
 			for score, line in zip(gf, iptf):
 				if not re.match(r'\w+', score):
 					continue
+				line = re.sub("#", "", line)
 				a,b = line.strip().split('\t')
 				f.write(str(id)+"\t"+a+"\t"+b+"\t"+score.strip()+"\t"+"ENTAILMENT\n")
 				id += 1

@@ -1,6 +1,6 @@
-local LSTMSim = torch.class('LSTMSim')
+local LSTMSim_MultiTask = torch.class('LSTMSim_MultiTask')
 
-function LSTMSim:__init(config)
+function LSTMSim_MultiTask:__init(config)
   self.mem_dim       = config.mem_dim       or 150
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -13,12 +13,15 @@ function LSTMSim:__init(config)
   self.emb_dim = config.emb_vecs:size(2)
   self.emb_vecs = config.emb_vecs
 
-  self.num_classes = 5
+  self.num_sim_classes = 5
+  self.num_ent_classes = 3
 
   -- optimizer configuration
   self.optim_state = { learningRate = self.learning_rate }
 
-  self.criterion = nn.DistKLDivCriterion()
+  self.criterion = nn.ParallelCriterion()
+  self.criterion:add(nn.DistKLDivCriterion())
+  self.criterion:add(nn.ClassNLLCriterion())
 
   -- initialize lstm model
   local lstm_config = {
@@ -40,7 +43,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv1d()
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -58,7 +61,7 @@ function LSTMSim:__init(config)
   end
 end
 
-function LSTMSim:new_sim_module()
+function LSTMSim_MultiTask:new_sim_module()
   print('Using simple sim module')
   local lvec, rvec, inputs, input_dim
   if self.structure == 'lstm' then
@@ -96,116 +99,23 @@ function LSTMSim:new_sim_module()
     :add(vecs_to_input)
     :add(nn.Linear(input_dim, self.sim_nhidden))
     :add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.Linear(self.sim_nhidden, self.num_sim_classes))
     :add(nn.LogSoftMax())
-  return sim_module
-end
 
-function LSTMSim:new_sim_module_conv1d()
-  print('Using conv1d sim module')
-
-  local img_h = self.num_layers
-  local img_w = self.mem_dim 
-
-  local num_plate
-  local inputFrameSize
-
-  if self.structure == 'lstm' then
-    local linput, rinput = nn.Identity()(), nn.Identity()()
-
-    if self.num_layers == 1 then
-      lvec, rvec = linput, rinput
-    else
-      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
-    end
-
-    local mult_dist = nn.CMulTable(){lvec, rvec}
-    local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-    
-    num_plate=2
-
-    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist})
-
-    local inputs = {linput, rinput}
-    vecs_to_input = nn.gModule(inputs, {out_mat})
-    inputFrameSize = img_h*img_w
-
-  elseif self.structure == 'bilstm' then
-
-    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
-    if self.num_layers == 1 then
-      lvec = nn.JoinTable(1){lf, lb}
-      rvec = nn.JoinTable(1){rf, rb}
-    else
-      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
-      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
-    end
-    inputs = {lf, lb, rf, rb}
-
-    local mult_dist = nn.CMulTable(){lvec, rvec}
-    local abssub_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-    --local add_dist = nn.CAddTable(){lmat, rmat}
-    --local div_dist = nn.CDivTable(){lmat, rmat}
-    --local mean_dist = nn.Mean(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
-    --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
-
-    --local relative_change = nn.MulConstant(0.01)(nn.CDivTable(){sub_dist, rmat})
-
-    --local relative_difference = nn.MulConstant(0.01)(nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist}))
-
-    --local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
-        --(nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))))
-
-    --local sqr_dist = nn.Square()(nn.CSubTable(){lmat, rmat})
-    --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
-
-    inputFrameSize = img_h*img_w*2
-    num_plate=2
-    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist})
-
-    local inputs = {lf, lb, rf, rb}
-    vecs_to_input = nn.gModule(inputs, {out_mat})
-    
-  end
-
-  local outputFrameSize = inputFrameSize
-  local kw = 1
-  local dw = 1
-  local pool_kw = 1
-  local pool_dw = 1
-  local mlp_input_dim = (((num_plate-kw)/dw+1-pool_kw)/pool_dw+1) * outputFrameSize
-  local outputFrameSize2 = img_h*img_w
-  local kw2=1
-  local dw2=1
-  local pool_kw2 = 1
-  local pool_dw2 = 1
-  local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
-  local sim_module = nn.Sequential()
+  local ent_module = nn.Sequential()
     :add(vecs_to_input)
-  
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
-    :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw2, pool_dw2))
-
-    :add(nn.Reshape(mlp_input_dim2))
-    :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
-    
-    :add(nn.Sigmoid()) 
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.Linear(input_dim, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_ent_classes))
     :add(nn.LogSoftMax())
-    
 
-  return sim_module
+  local outputs = nn.ConcatTable(2):add(sim_module):add(ent_module)
+
+  return outputs
 
 end
 
-function LSTMSim:train(dataset)
+function LSTMSim_MultiTask:train(dataset)
 
   self.llstm:training()
   self.rlstm:training()
@@ -221,9 +131,10 @@ function LSTMSim:train(dataset)
     xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
 
-    local targets = torch.zeros(batch_size, self.num_classes)
+    local targets = torch.zeros(batch_size, self.num_sim_classes)
     for j=1, batch_size do
-      local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_classes-1)+1
+      
+      local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_sim_classes-1)+1
       local ceil, floor = math.ceil(sim), math.floor(sim)
 
       if ceil ==0 then
@@ -248,6 +159,7 @@ function LSTMSim:train(dataset)
       for j = 1, batch_size do
         local idx = indices[i + j - 1]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
+        local ent = dataset.ent_labels[idx]
 
         local linputs = self.emb_vecs:index(1, lsent:long()):double()
         local rinputs = self.emb_vecs:index(1, rsent:long()):double()
@@ -266,13 +178,13 @@ function LSTMSim:train(dataset)
         end
 
         local output = self.sim_module:forward(inputs)
-
+  
         -- compute loss and backpropagate
-        local example_loss = self.criterion:forward(output, targets[j])
+        local example_loss = self.criterion:forward(output, {targets[j], ent})
 
         loss = loss + example_loss
 
-        local sim_grad = self.criterion:backward(output, targets[j])
+        local sim_grad = self.criterion:backward(output, {targets[j], ent})
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
@@ -298,7 +210,7 @@ function LSTMSim:train(dataset)
 end
 
 -- LSTM backward propagation
-function LSTMSim:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMSim_MultiTask:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
   if self.num_layers == 1 then
     lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -318,7 +230,7 @@ function LSTMSim:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
 end
 
 -- Bidirectional LSTM backward propagation
-function LSTMSim:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMSim_MultiTask:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, lgrad_b, rgrad, rgrad_b
   if self.num_layers == 1 then
     lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -348,7 +260,7 @@ function LSTMSim:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
 end
 
 -- Predict the similarity of a sentence pair.
-function LSTMSim:predict(lsent, rsent)
+function LSTMSim_MultiTask:predict(lsent, rsent)
   self.llstm:evaluate()
   self.rlstm:evaluate()
   local linputs = self.emb_vecs:index(1, lsent:long()):double()
@@ -367,6 +279,7 @@ function LSTMSim:predict(lsent, rsent)
     }
   end
   local output = self.sim_module:forward(inputs)
+  --dbg()
   self.llstm:forget()
   self.rlstm:forget()
   if self.structure == 'bilstm' then
@@ -374,23 +287,39 @@ function LSTMSim:predict(lsent, rsent)
     self.rlstm_b:forget()
   end
 
-  return torch.range(1,5):dot(output:exp())
+  return {torch.range(1,5):dot(output[1]:exp()), argmax(output[2])}
 end
+
+function argmax(v)
+  local idx = 1
+  local max = v[1]
+  for i=2, v:size(1) do
+    if v[i] >max then
+      max = v[i]
+      idx = i
+    end
+  end
+  return idx
+end
+
 
 
 -- Produce similarity predictions for each sentence pair in the dataset.
-function LSTMSim:predict_dataset(dataset)
+function LSTMSim_MultiTask:predict_dataset(dataset)
 
-  local predictions = torch.Tensor(dataset.size)
+  local predictions_sim = torch.Tensor(dataset.size)
+  local predictions_ent = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
-    predictions[i] = self:predict(lsent, rsent)
+    pred = self:predict(lsent, rsent)
+    predictions_sim[i] = pred[1]
+    predictions_ent[i] = pred[2]
   end
-  return predictions
+  return {predictions_sim, predictions_ent}
 end
 
-function LSTMSim:print_config()
+function LSTMSim_MultiTask:print_config()
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
@@ -404,7 +333,7 @@ end
 --
 --Serialization
 --
-function LSTMSim:save(path)
+function LSTMSim_MultiTask:save(path)
   local config = {
     batch_size = self.batch_size,
     emb_vecs = self.emb_vecs:float(),
@@ -423,9 +352,9 @@ function LSTMSim:save(path)
 
 end
 
-function LSTMSim.load(path)
+function LSTMSim_MultiTask.load(path)
   local state = torch.load(path)
-  local model = LSTMSim.new(state.config)
+  local model = LSTMSim_MultiTask.new(state.config)
   model.params:copy(state.params)
   return model
 end

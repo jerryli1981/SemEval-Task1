@@ -40,14 +40,15 @@ def split(filepath, dst_dir):
     with open(filepath) as datafile, \
          open(os.path.join(dst_dir, 'a.txt'), 'w') as afile, \
          open(os.path.join(dst_dir, 'b.txt'), 'w') as bfile, \
-         open(os.path.join(dst_dir, 'sim.txt'), 'w') as simfile:
-
+         open(os.path.join(dst_dir, 'sim.txt'), 'w') as simfile,\
+         open(os.path.join(dst_dir, 'ent.txt'), 'w') as entfile:
             datafile.readline()
             for line in datafile:
                 i, a, b, sim, ent = line.strip().split('\t')
                 afile.write(a+'\n')
                 bfile.write(b+'\n')
                 simfile.write(sim+'\n')
+                entfile.write(ent+'\n')
 
 
 def parse(dirpath, cp=''):
@@ -95,6 +96,7 @@ def build_word2Vector(glove_path, data_dir, vocab_name):
     count = 0   
     for word in vocab:
         if word not in wordSet:
+            print word
             wordIdx = vocab[word]
             count += 1
             word_embedding_matrix[:,wordIdx] = np.random.uniform(-0.05,0.05, 300) 
@@ -127,7 +129,7 @@ if __name__ == '__main__':
         os.path.join(lib_dir, 'stanford-parser/stanford-parser-3.5.2-models.jar')])
 
     # split into separate files
-    split(os.path.join(data_dir, 'SICK_train_rich.txt'), train_dir)
+    split(os.path.join(data_dir, 'SICK_train.txt'), train_dir)
     split(os.path.join(data_dir, 'SICK_trial.txt'), dev_dir)
     split(os.path.join(data_dir, 'SICK_test_annotated.txt'), test_dir)
 
@@ -136,6 +138,7 @@ if __name__ == '__main__':
     parse(train_dir, cp=classpath)
     parse(dev_dir, cp=classpath)
     parse(test_dir, cp=classpath)
+    
 
     # get vocabulary
     build_vocab(
@@ -143,6 +146,4 @@ if __name__ == '__main__':
         os.path.join(data_dir, 'vocab-cased.txt'),
         lowercase=False)
 
-    
-    glove_path = os.path.join("../NLP-Tools", 'glove.840B.300d.txt')
-    build_word2Vector(glove_path, data_dir, 'vocab-cased.txt')
+    build_word2Vector(os.path.join("../NLP-Tools", 'glove.840B.300d.txt'), data_dir, 'vocab-cased.txt')

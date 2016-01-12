@@ -27,6 +27,7 @@ end
 
 function read_dataset(dir, vocab)
 
+  local entlabmap = {NEUTRAL=3, CONTRADICTION=1, ENTAILMENT=2}
   local dataset = {}
   dataset.vocab = vocab
 
@@ -36,14 +37,18 @@ function read_dataset(dir, vocab)
 
 
   local sim_file = torch.DiskFile(dir .. 'sim.txt', 'r')
-  dataset.labels = torch.Tensor(dataset.size)
+  local ent_file = io.open(dir .. 'ent.txt', 'r')
+  dataset.sim_labels = torch.Tensor(dataset.size)
+  dataset.ent_labels = torch.Tensor(dataset.size)
 
 
   for i = 1, dataset.size do
-    dataset.labels[i] = 0.25 * (sim_file:readDouble() - 1)
+    dataset.sim_labels[i] = 0.25 * (sim_file:readDouble() - 1)
+    dataset.ent_labels[i] = entlabmap[ent_file:read()]
   end
 
   sim_file:close()
+  ent_file:close()
 
   return dataset
 end
