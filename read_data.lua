@@ -35,7 +35,6 @@ function read_dataset(dir, vocab)
   dataset.rsents = read_sentences(dir .. 'b.toks', vocab)
   dataset.size = #dataset.lsents
 
-
   local sim_file = torch.DiskFile(dir .. 'sim.txt', 'r')
   local ent_file = io.open(dir .. 'ent.txt', 'r')
   dataset.sim_labels = torch.Tensor(dataset.size)
