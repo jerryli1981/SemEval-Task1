@@ -169,7 +169,7 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     --local relative_difference = nn.MulConstant(0.01)(nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist}))
 
     local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
-        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))))
+        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lvec, rvec}))))
 
     --local sqr_dist = nn.Square()(nn.CSubTable(){lmat, rmat})
     --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
