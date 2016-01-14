@@ -168,15 +168,15 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
 
     --local relative_difference = nn.MulConstant(0.01)(nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist}))
 
-    --local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
-        --(nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))))
+    local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
+        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))))
 
     --local sqr_dist = nn.Square()(nn.CSubTable(){lmat, rmat})
     --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
 
     inputFrameSize = img_h*img_w*2
-    num_plate=2
-    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist})
+    num_plate=3
+    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, conv1d_dist})
 
     local inputs = {lf, lb, rf, rb}
     vecs_to_input = nn.gModule(inputs, {out_mat})
