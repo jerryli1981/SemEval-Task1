@@ -124,27 +124,7 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
   local num_plate
   local inputFrameSize
 
-  if self.structure == 'lstm' then
-    local linput, rinput = nn.Identity()(), nn.Identity()()
-
-    if self.num_layers == 1 then
-      lvec, rvec = linput, rinput
-    else
-      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
-    end
-
-    local mult_dist = nn.CMulTable(){lvec, rvec}
-    local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-    
-    num_plate=2
-
-    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist})
-
-    local inputs = {linput, rinput}
-    vecs_to_input = nn.gModule(inputs, {out_mat})
-    inputFrameSize = img_h*img_w
-
-  elseif self.structure == 'bilstm' then
+  if self.structure == 'bilstm' then
 
     local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
     if self.num_layers == 1 then
@@ -160,11 +140,11 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     local mult_dist = nn.CMulTable(){lvec, rvec}
     local abssub_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
 
-    --local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
-        --(nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lvec, rvec}))))
+    local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
+        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lvec, rvec}))))
 
     inputFrameSize = img_h*img_w*2
-    num_plate=2
+    num_plate=3
     local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, conv1d_dist})
 
     local inputs = {lf, lb, rf, rb}
@@ -176,17 +156,13 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
   local kw = 1
   local dw = 1
 
-  local pool_kw = 1
-  local pool_dw = 1
-  --local mlp_input_dim = (((num_plate-kw)/dw+1-pool_kw)/pool_dw+1) * outputFrameSize
-
   local outputFrameSize2 = img_h*img_w
-  local kw2=1
+  local kw2=2
   local dw2=1
-  local pool_kw2 = 1
-  local pool_dw2 = 1
+  local pool_kw = 2
+  local pool_dw = 1
   --local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
-  local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
+  local mlp_input_dim =    (((  (num_plate-kw)/dw+1-kw2  )/dw2+1 -pool_kw)/pool_dw+1)* outputFrameSize2
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
@@ -194,19 +170,19 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
     :add(nn.Tanh())
 
-    --:add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw2, pool_dw2))
+    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
-    :add(nn.Reshape(mlp_input_dim2))
-    :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
+    
+    :add(nn.Reshape(mlp_input_dim))
+    --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     
     :add(nn.Sigmoid()) 
     :add(nn.Linear(self.sim_nhidden, self.num_sim_classes))
     :add(nn.LogSoftMax())
+
 
   local ent_module = nn.Sequential()
     :add(vecs_to_input)
@@ -218,17 +194,17 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
 
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw2, pool_dw2))
+    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
-    :add(nn.Reshape(mlp_input_dim2))
-    :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
+    
+    :add(nn.Reshape(mlp_input_dim))
+    --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     
     :add(nn.Sigmoid()) 
     :add(nn.Linear(self.sim_nhidden, self.num_ent_classes))
     :add(nn.LogSoftMax())
-
-
+  
   local outputs = nn.ConcatTable(2):add(sim_module):add(ent_module)
 
   return outputs
@@ -400,6 +376,7 @@ function LSTMSim_MultiTask:train(dataset)
         end
 
         local output = self.sim_module:forward(inputs)
+        --dbg()
   
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, {targets[j], ent})
