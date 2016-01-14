@@ -43,7 +43,7 @@ function LSTMSim_MultiTask:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv1d_2()
+  self.sim_module = self:new_sim_module_conv1d()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -153,16 +153,17 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
   end
 
   local outputFrameSize = inputFrameSize
-  local kw = 1
+  local kw = 2
   local dw = 1
 
   local outputFrameSize2 = img_h*img_w
   local kw2=2
   local dw2=1
-  local pool_kw = 2
-  local pool_dw = 1
+  --local pool_kw = 2
+  --local pool_dw = 1
   --local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
-  local mlp_input_dim =    (((  (num_plate-kw)/dw+1-kw2  )/dw2+1 -pool_kw)/pool_dw+1)* outputFrameSize2
+  --local mlp_input_dim =    (((  (num_plate-kw)/dw+1-kw2  )/dw2+1 -pool_kw)/pool_dw+1)* outputFrameSize2
+  local mlp_input_dim = (((num_plate-kw)/dw+1-kw2)/dw2+1 )* outputFrameSize2
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
@@ -172,11 +173,11 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
 
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
+    --:add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     
     :add(nn.Reshape(mlp_input_dim))
-    --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     
     :add(nn.Sigmoid()) 
@@ -194,11 +195,11 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
 
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
     :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
+    --:add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     
     :add(nn.Reshape(mlp_input_dim))
-    --:add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     
     :add(nn.Sigmoid()) 
