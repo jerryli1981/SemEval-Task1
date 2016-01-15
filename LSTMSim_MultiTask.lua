@@ -156,13 +156,12 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
   local kw = 2
   local dw = 1
 
-  local outputFrameSize2 = img_h*img_w
-  local kw2=1
-  local dw2=1
-  local pool_kw = 2
-  local pool_dw = 1
-  --local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
-  local mlp_input_dim =    (((  (num_plate-kw)/dw+1-kw2  )/dw2+1 -pool_kw)/pool_dw+1)* outputFrameSize2
+  --local outputFrameSize2 = img_h*img_w
+  --local kw2=1
+  --local dw2=1
+
+  local mlp_input_dim = ((num_plate-kw)/dw+1)* outputFrameSize
+  --local mlp_input_dim =    (((  (num_plate-kw)/dw+1-kw2  )/dw2+1 -pool_kw)/pool_dw+1)* outputFrameSize2
   --local mlp_input_dim = (((num_plate-kw)/dw+1-kw2)/dw2+1 )* outputFrameSize2
 
   local sim_module = nn.Sequential()
@@ -171,9 +170,9 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
     :add(nn.Tanh())
 
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
-    :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
+    --:add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
+    --:add(nn.Tanh())
+    --:add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     
     :add(nn.Reshape(mlp_input_dim))
@@ -191,9 +190,9 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
     :add(nn.Tanh())
 
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
-    :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
+    --:add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
+    --:add(nn.Tanh())
+    --:add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     
     :add(nn.Reshape(mlp_input_dim))
