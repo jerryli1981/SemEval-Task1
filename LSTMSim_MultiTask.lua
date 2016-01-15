@@ -154,8 +154,9 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
 
   local outputFrameSize = inputFrameSize
   local kw = 2
+  local outputFrameSize2 = img_h*img_w
   local kw2=1
-  local mlp_input_dim = (num_plate-kw+1-kw2+1)* outputFrameSize
+  local mlp_input_dim = (num_plate-kw+1-kw2+1)* outputFrameSize2
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
@@ -163,7 +164,7 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, 1))
     :add(nn.Tanh())
 
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, 1))
+    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, 1))
     :add(nn.Tanh())
 
     :add(nn.Reshape(mlp_input_dim))
@@ -181,7 +182,7 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, 1))
     :add(nn.Tanh())
 
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, 1))
+    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, 1))
     :add(nn.Tanh())
 
     :add(nn.Reshape(mlp_input_dim))
