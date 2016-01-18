@@ -40,7 +40,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_conv1d()
 
   local modules = nn.Parallel()
     :add(self.llstm)
@@ -101,7 +101,7 @@ function LSTMSim:new_sim_module()
   return sim_module
 end
 
-function LSTMSim:new_sim_module_conv1d()
+function LSTMSim:new_sim_module_conv1d_old()
   print('Using conv1d sim module')
 
   local img_h = self.num_layers
@@ -200,9 +200,72 @@ function LSTMSim:new_sim_module_conv1d()
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
     
-
   return sim_module
 
+end
+
+function LSTMSim:new_sim_module_conv1d()
+  print('Using conv1d sim module 1')
+
+  local img_h = self.num_layers
+  local img_w = self.mem_dim 
+
+  local num_plate
+  local inputFrameSize
+
+  if self.structure == 'bilstm' then
+
+    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
+    if self.num_layers == 1 then
+      lvec = nn.JoinTable(1){lf, lb}
+      rvec = nn.JoinTable(1){rf, rb}
+    else
+      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
+      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+    end
+    inputs = {lf, lb, rf, rb}
+
+    local mult_dist = nn.CMulTable(){lvec, rvec}
+    local abssub_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
+
+    local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
+        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lvec, rvec}))))
+
+    inputFrameSize = img_h*img_w*2
+    num_plate=3
+    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, conv1d_dist})
+
+    local inputs = {lf, lb, rf, rb}
+    vecs_to_input = nn.gModule(inputs, {out_mat})
+    
+  end
+
+  local outputFrameSize = inputFrameSize
+  local kw = 2
+  local outputFrameSize2 = img_h*img_w
+  local kw2=1
+  local mlp_input_dim = (num_plate-kw+1-kw2+1)* outputFrameSize2
+
+  local sim_module = nn.Sequential()
+    :add(vecs_to_input)
+  
+    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, 1))
+    :add(nn.Tanh())
+
+    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, 1))
+    :add(nn.Tanh())
+
+    :add(nn.Reshape(mlp_input_dim))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    
+    :add(nn.Sigmoid()) 
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
+  
+  return sim_module
+    
 end
 
 function LSTMSim:train(dataset)
@@ -299,6 +362,7 @@ function LSTMSim:train(dataset)
     avgloss = avgloss/N
   end
   xlua.progress(dataset.size, dataset.size)
+  return avgloss
 end
 
 -- LSTM backward propagation
