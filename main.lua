@@ -117,7 +117,7 @@ for i = 1, num_epochs do
   printf('-- finished epoch in %.2fs\n', sys.clock() - start)
 
   local dev_predictions = model:predict_dataset(dev_dataset)
-  local dev_score = pearson(dev_predictions, dev_dataset.labels)
+  local dev_score = pearson(dev_predictions, dev_dataset.sim_labels)
 
   printf('--dev score: %.4f\n', dev_score)
 
