@@ -112,7 +112,8 @@ header('Training model')
 for i = 1, num_epochs do
   local start = sys.clock()
   printf('-- epoch %d\n', i)
-  model:train(train_dataset)
+  loss = model:train(train_dataset)
+  printf('loss is: %.4f\n', loss)
   printf('-- finished epoch in %.2fs\n', sys.clock() - start)
 
   local dev_predictions = model:predict_dataset(dev_dataset)
