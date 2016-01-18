@@ -13,6 +13,7 @@ include('Vocab.lua')
 include('CRowAddTable.lua')
 include('LSTM.lua')
 include('LSTMSim.lua')
+include('LSTMSim_ent.lua')
 include('LSTMSim_MultiTask.lua')
 
 
