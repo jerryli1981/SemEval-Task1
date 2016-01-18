@@ -291,13 +291,12 @@ function LSTMSim_MultiTask:train(dataset)
 
       avgloss = avgloss + loss
       self.grad_params:add(self.reg, self.params)
-      return loss, self.grad_params
     end
     optim.adagrad(feval, self.params, self.optim_state)
   end
 
   xlua.progress(dataset.size, dataset.size)
-  return avgloss
+  return avgloss/N
 end
 
 -- LSTM backward propagation
