@@ -211,6 +211,9 @@ function LSTMSim_MultiTask:train(dataset)
 
   local indices = torch.randperm(dataset.size)
 
+  local avgloss = 0.
+  local N = dataset.size / self.batch_size
+
   for i = 1, dataset.size, self.batch_size do
     xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
@@ -262,8 +265,7 @@ function LSTMSim_MultiTask:train(dataset)
         end
 
         local output = self.sim_module:forward(inputs)
-        --dbg()
-  
+        
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, {targets[j], ent})
 
@@ -286,12 +288,16 @@ function LSTMSim_MultiTask:train(dataset)
 
       -- regularization
       loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+
+      avgloss = avgloss + loss
       self.grad_params:add(self.reg, self.params)
       return loss, self.grad_params
     end
     optim.adagrad(feval, self.params, self.optim_state)
   end
+
   xlua.progress(dataset.size, dataset.size)
+  return avgloss
 end
 
 -- LSTM backward propagation
