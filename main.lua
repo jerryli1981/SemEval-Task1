@@ -145,7 +145,7 @@ printf('finished training in %.2fs\n', sys.clock() - train_start)
 header('Evaluating on test set')
 printf('-- using model with dev score = %.4f\n', best_dev_score)
 local test_predictions = best_dev_model:predict_dataset(test_dataset)
-local test_score = pearson(test_predictions, test_dataset.labels)
+local test_score = pearson(test_predictions, test_dataset.sim_labels)
 printf('-- test score: %.4f\n', test_score)
 
 
