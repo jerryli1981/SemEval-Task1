@@ -265,7 +265,8 @@ function LSTMSim_MultiTask:train(dataset)
         end
 
         local output = self.sim_module:forward(inputs)
-        
+        --dbg()
+  
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, {targets[j], ent})
 
@@ -291,12 +292,14 @@ function LSTMSim_MultiTask:train(dataset)
 
       avgloss = avgloss + loss
       self.grad_params:add(self.reg, self.params)
+      return loss, self.grad_params
     end
     optim.adagrad(feval, self.params, self.optim_state)
+    avgloss = avgloss/N
   end
 
   xlua.progress(dataset.size, dataset.size)
-  return avgloss/N
+  return avgloss
 end
 
 -- LSTM backward propagation
