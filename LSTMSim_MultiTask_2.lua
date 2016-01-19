@@ -53,7 +53,7 @@ function LSTMSim_MultiTask_2:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module()
+  self.sim_module = self:new_sim_module_conv1d()
 
   local modules = nn.Parallel()
     :add(self.llstm_1)
@@ -157,6 +157,113 @@ function LSTMSim_MultiTask_2:new_sim_module()
 
   return outputs
 
+end
+
+function LSTMSim_MultiTask_2:new_sim_module_conv1d()
+  print('Using conv1d sim module 1')
+
+  local img_h = self.num_layers
+  local img_w = self.mem_dim 
+
+  local num_plate
+  local inputFrameSize
+
+  if self.structure == 'bilstm' then
+
+    -- bidirectional LSTM
+    input_dim = 4 * self.num_layers * self.mem_dim
+
+    local x1, x2 = nn.Identity()(), nn.Identity()()
+
+    local lf_1 = nn.SelectTable(1)(x1)
+    local lb_1 = nn.SelectTable(2)(x1)
+    local rf_1 = nn.SelectTable(3)(x1)
+    local rb_1 = nn.SelectTable(4)(x1)
+
+    local lf_2 = nn.SelectTable(1)(x2)
+    local lb_2 = nn.SelectTable(2)(x2)
+    local rf_2 = nn.SelectTable(3)(x2)
+    local rb_2 = nn.SelectTable(4)(x2)
+    
+    if self.num_layers == 1 then
+      lvec_1 = nn.JoinTable(1){lf_1, lb_1}
+      rvec_1 = nn.JoinTable(1){rf_1, rb_1}
+      lvec_2 = nn.JoinTable(1){lf_2, lb_2}
+      rvec_2 = nn.JoinTable(1){rf_2, rb_2}
+    else
+      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
+      lvec_1 = nn.JoinTable(1){nn.JoinTable(1)(lf_1), nn.JoinTable(1)(lb_1)}
+      rvec_1 = nn.JoinTable(1){nn.JoinTable(1)(rf_1), nn.JoinTable(1)(rb_1)}
+      lvec_2 = nn.JoinTable(1){nn.JoinTable(1)(lf_2), nn.JoinTable(1)(lb_2)}
+      rvec_2 = nn.JoinTable(1){nn.JoinTable(1)(rf_2), nn.JoinTable(1)(rb_2)}
+    end
+
+    inputs = {x1, x2}
+
+    local mult_dist_1 = nn.CMulTable(){lvec_1, rvec_1}
+    local abssub_dist_1 = nn.Abs()(nn.CSubTable(){lvec_1, rvec_1})
+    local conv1d_dist_1 = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
+        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lvec_1, rvec_1}))))
+
+    local mult_dist_2 = nn.CMulTable(){lvec_2, rvec_2}
+    local abssub_dist_2 = nn.Abs()(nn.CSubTable(){lvec_2, rvec_2})
+    local conv1d_dist_2 = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
+        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lvec_2, rvec_2}))))
+
+    inputFrameSize = img_h*img_w*2
+    num_plate=3
+    local out_mat_1 = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist_1, abssub_dist_1, conv1d_dist_1})
+    local out_mat_2 = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist_2, abssub_dist_2, conv1d_dist_2})
+
+    vecs_to_input = nn.gModule(inputs, {out_mat_1, out_mat_2})
+    
+  end
+
+  local outputFrameSize = inputFrameSize
+  local kw = 2
+  local outputFrameSize2 = img_h*img_w
+  local kw2=1
+  local mlp_input_dim = (num_plate-kw+1-kw2+1)* outputFrameSize2
+
+  local sim_module = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.SelectTable(1))
+    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, 1))
+    :add(nn.Tanh())
+
+    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, 1))
+    :add(nn.Tanh())
+
+    :add(nn.Reshape(mlp_input_dim))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    
+    :add(nn.Sigmoid()) 
+    :add(nn.Linear(self.sim_nhidden, self.num_sim_classes))
+    :add(nn.LogSoftMax())
+
+
+  local ent_module = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.SelectTable(2))
+    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, 1))
+    :add(nn.Tanh())
+
+    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, 1))
+    :add(nn.Tanh())
+
+    :add(nn.Reshape(mlp_input_dim))
+    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
+    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
+    
+    :add(nn.Sigmoid()) 
+    :add(nn.Linear(self.sim_nhidden, self.num_ent_classes))
+    :add(nn.LogSoftMax())
+  
+  local outputs = nn.ConcatTable(2):add(sim_module):add(ent_module)
+
+  return outputs
+    
 end
 
 function LSTMSim_MultiTask_2:train(dataset)
