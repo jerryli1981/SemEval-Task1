@@ -15,6 +15,7 @@ include('LSTM.lua')
 include('LSTMSim.lua')
 include('LSTMSim_ent.lua')
 include('LSTMSim_MultiTask.lua')
+include('LSTMSim_MultiTask_2.lua')
 
 
 HighwayMLP = require 'HighwayMLP'
