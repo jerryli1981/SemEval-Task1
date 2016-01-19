@@ -58,8 +58,7 @@ function LSTMSim_MultiTask_2:__init(config)
   local modules = nn.Parallel()
     :add(self.llstm_1)
     :add(self.llstm_2)
-    :add(self.sim_module_1)
-    :add(self.sim_module_2)
+    :add(self.sim_module)
 
   self.params, self.grad_params = modules:getParameters()
 
