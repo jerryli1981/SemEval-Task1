@@ -1,6 +1,6 @@
-local LSTMSim_MultiTask_2 = torch.class('LSTMSim_MultiTask_2')
+local LSTM_Multitask_arc2 = torch.class('LSTM_Multitask_arc2')
 
-function LSTMSim_MultiTask_2:__init(config)
+function LSTM_Multitask_arc2:__init(config)
   self.mem_dim       = config.mem_dim       or 150
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -78,7 +78,7 @@ function LSTMSim_MultiTask_2:__init(config)
 
 end
 
-function LSTMSim_MultiTask_2:new_sim_module()
+function LSTM_Multitask_arc2:new_sim_module()
   print('Using simple sim module')
   local lvec, rvec, inputs, input_dim
   if self.structure == 'lstm' then
@@ -159,7 +159,7 @@ function LSTMSim_MultiTask_2:new_sim_module()
 
 end
 
-function LSTMSim_MultiTask_2:new_sim_module_conv1d()
+function LSTM_Multitask_arc2:new_sim_module_conv1d()
   print('Using conv1d sim module 1')
 
   local img_h = self.num_layers
@@ -266,7 +266,7 @@ function LSTMSim_MultiTask_2:new_sim_module_conv1d()
     
 end
 
-function LSTMSim_MultiTask_2:train(dataset)
+function LSTM_Multitask_arc2:train(dataset)
 
   self.llstm_1:training()
   self.rlstm_1:training()
@@ -388,7 +388,7 @@ function LSTMSim_MultiTask_2:train(dataset)
 end
 
 -- LSTM backward propagation
-function LSTMSim_MultiTask_2:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTM_Multitask_arc2:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
   if self.num_layers == 1 then
     lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -408,7 +408,7 @@ function LSTMSim_MultiTask_2:LSTM_backward(lsent, rsent, linputs, rinputs, rep_g
 end
 
 -- Bidirectional LSTM backward propagation
-function LSTMSim_MultiTask_2:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad, flag)
+function LSTM_Multitask_arc2:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad, flag)
   local lgrad, lgrad_b, rgrad, rgrad_b
   if self.num_layers == 1 then
     lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -447,7 +447,7 @@ function LSTMSim_MultiTask_2:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep
 end
 
 -- Predict the similarity of a sentence pair.
-function LSTMSim_MultiTask_2:predict(lsent, rsent)
+function LSTM_Multitask_arc2:predict(lsent, rsent)
   self.llstm_1:evaluate()
   self.rlstm_1:evaluate()
   self.llstm_2:evaluate()
@@ -510,7 +510,7 @@ end
 
 
 -- Produce similarity predictions for each sentence pair in the dataset.
-function LSTMSim_MultiTask_2:predict_dataset(dataset)
+function LSTM_Multitask_arc2:predict_dataset(dataset)
 
   local predictions_sim = torch.Tensor(dataset.size)
   local predictions_ent = torch.Tensor(dataset.size)
@@ -524,7 +524,7 @@ function LSTMSim_MultiTask_2:predict_dataset(dataset)
   return {predictions_sim, predictions_ent}
 end
 
-function LSTMSim_MultiTask_2:print_config()
+function LSTM_Multitask_arc2:print_config()
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
@@ -538,7 +538,7 @@ end
 --
 --Serialization
 --
-function LSTMSim_MultiTask_2:save(path)
+function LSTM_Multitask_arc2:save(path)
   local config = {
     batch_size = self.batch_size,
     emb_vecs = self.emb_vecs:float(),
@@ -557,7 +557,7 @@ function LSTMSim_MultiTask_2:save(path)
 
 end
 
-function LSTMSim_MultiTask_2.load(path)
+function LSTM_Multitask_arc2.load(path)
   local state = torch.load(path)
   local model = LSTMSim_MultiTask.new(state.config)
   model.params:copy(state.params)

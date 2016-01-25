@@ -1,6 +1,6 @@
-local LSTMSim_MultiTask = torch.class('LSTMSim_MultiTask')
+local LSTMEnt = torch.class('LSTMEnt')
 
-function LSTMSim_MultiTask:__init(config)
+function LSTMEnt:__init(config)
   self.mem_dim       = config.mem_dim       or 150
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -13,15 +13,12 @@ function LSTMSim_MultiTask:__init(config)
   self.emb_dim = config.emb_vecs:size(2)
   self.emb_vecs = config.emb_vecs
 
-  self.num_sim_classes = 5
-  self.num_ent_classes = 3
+  self.num_classes = 3
 
   -- optimizer configuration
   self.optim_state = { learningRate = self.learning_rate }
 
-  self.criterion = nn.ParallelCriterion()
-  self.criterion:add(nn.DistKLDivCriterion())
-  self.criterion:add(nn.ClassNLLCriterion())
+  self.criterion = nn.ClassNLLCriterion()
 
   -- initialize lstm model
   local lstm_config = {
@@ -61,61 +58,7 @@ function LSTMSim_MultiTask:__init(config)
   end
 end
 
-function LSTMSim_MultiTask:new_sim_module()
-  print('Using simple sim module')
-  local lvec, rvec, inputs, input_dim
-  if self.structure == 'lstm' then
-    -- standard (left-to-right) LSTM
-    input_dim = 2 * self.num_layers * self.mem_dim
-    local linput, rinput = nn.Identity()(), nn.Identity()()
-    if self.num_layers == 1 then
-      lvec, rvec = linput, rinput
-    else
-      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
-    end
-    inputs = {linput, rinput}
-  elseif self.structure == 'bilstm' then
-    -- bidirectional LSTM
-    input_dim = 4 * self.num_layers * self.mem_dim
-    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
-    if self.num_layers == 1 then
-      lvec = nn.JoinTable(1){lf, lb}
-      rvec = nn.JoinTable(1){rf, rb}
-    else
-      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
-      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
-    end
-    inputs = {lf, lb, rf, rb}
-  end
-
-  local mult_dist = nn.CMulTable(){lvec, rvec}
-  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-  local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  local vecs_to_input = nn.gModule(inputs, {vec_dist_feats})
-
-
-  local sim_module = nn.Sequential()
-    :add(vecs_to_input)
-    :add(nn.Linear(input_dim, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_sim_classes))
-    :add(nn.LogSoftMax())
-
-  local ent_module = nn.Sequential()
-    :add(vecs_to_input)
-    :add(nn.Linear(input_dim, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_ent_classes))
-    :add(nn.LogSoftMax())
-
-  local outputs = nn.ConcatTable(2):add(sim_module):add(ent_module)
-
-  return outputs
-
-end
-
-function LSTMSim_MultiTask:new_sim_module_conv1d()
+function LSTMEnt:new_sim_module_conv1d()
   print('Using conv1d sim module 1')
 
   local img_h = self.num_layers
@@ -172,34 +115,14 @@ function LSTMSim_MultiTask:new_sim_module_conv1d()
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
     
     :add(nn.Sigmoid()) 
-    :add(nn.Linear(self.sim_nhidden, self.num_sim_classes))
-    :add(nn.LogSoftMax())
-
-
-  local ent_module = nn.Sequential()
-    :add(vecs_to_input)
-  
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, 1))
-    :add(nn.Tanh())
-
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, 1))
-    :add(nn.Tanh())
-
-    :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    
-    :add(nn.Sigmoid()) 
-    :add(nn.Linear(self.sim_nhidden, self.num_ent_classes))
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
   
-  local outputs = nn.ConcatTable(2):add(sim_module):add(ent_module)
-
-  return outputs
+  return sim_module
     
 end
 
-function LSTMSim_MultiTask:train(dataset)
+function LSTMEnt:train(dataset)
 
   self.llstm:training()
   self.rlstm:training()
@@ -210,7 +133,6 @@ function LSTMSim_MultiTask:train(dataset)
   end
 
   local indices = torch.randperm(dataset.size)
-
   local avgloss = 0.
   local N = dataset.size / self.batch_size
 
@@ -218,27 +140,7 @@ function LSTMSim_MultiTask:train(dataset)
     xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
 
-    local targets = torch.zeros(batch_size, self.num_sim_classes)
-    for j=1, batch_size do
-      
-      local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_sim_classes-1)+1
-      local ceil, floor = math.ceil(sim), math.floor(sim)
-
-      if ceil ==0 then
-        ceil=1
-      end
-      if floor ==0 then
-        floor=1
-      end
-
-      if ceil == floor then
-        targets[{j, floor}] = 1
-      else
-        targets[{j, floor}] = ceil -sim
-        targets[{j, ceil}] = sim - floor
-      end
-    end
-
+  
     local feval = function(x)
       self.grad_params:zero()
 
@@ -265,14 +167,13 @@ function LSTMSim_MultiTask:train(dataset)
         end
 
         local output = self.sim_module:forward(inputs)
-        --dbg()
-  
+
         -- compute loss and backpropagate
-        local example_loss = self.criterion:forward(output, {targets[j], ent})
+        local example_loss = self.criterion:forward(output, ent)
 
         loss = loss + example_loss
 
-        local sim_grad = self.criterion:backward(output, {targets[j], ent})
+        local sim_grad = self.criterion:backward(output, ent)
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
@@ -289,22 +190,19 @@ function LSTMSim_MultiTask:train(dataset)
 
       -- regularization
       loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
-
       avgloss = avgloss + loss
       self.grad_params:add(self.reg, self.params)
       return loss, self.grad_params
     end
     optim.adagrad(feval, self.params, self.optim_state)
-
     avgloss = avgloss/N
   end
-
   xlua.progress(dataset.size, dataset.size)
   return avgloss
 end
 
 -- LSTM backward propagation
-function LSTMSim_MultiTask:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMEnt:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
   if self.num_layers == 1 then
     lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -324,7 +222,7 @@ function LSTMSim_MultiTask:LSTM_backward(lsent, rsent, linputs, rinputs, rep_gra
 end
 
 -- Bidirectional LSTM backward propagation
-function LSTMSim_MultiTask:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMEnt:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, lgrad_b, rgrad, rgrad_b
   if self.num_layers == 1 then
     lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -354,7 +252,7 @@ function LSTMSim_MultiTask:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_g
 end
 
 -- Predict the similarity of a sentence pair.
-function LSTMSim_MultiTask:predict(lsent, rsent)
+function LSTMEnt:predict(lsent, rsent)
   self.llstm:evaluate()
   self.rlstm:evaluate()
   local linputs = self.emb_vecs:index(1, lsent:long()):double()
@@ -373,22 +271,21 @@ function LSTMSim_MultiTask:predict(lsent, rsent)
     }
   end
   local output = self.sim_module:forward(inputs)
-  --dbg()
+  local prediction = argmax(output)
   self.llstm:forget()
   self.rlstm:forget()
   if self.structure == 'bilstm' then
     self.llstm_b:forget()
     self.rlstm_b:forget()
   end
-
-  return {torch.range(1,5):dot(output[1]:exp()), argmax(output[2])}
+  return prediction
 end
 
 function argmax(v)
   local idx = 1
   local max = v[1]
-  for i=2, v:size(1) do
-    if v[i] >max then
+  for i = 2, v:size(1) do
+    if v[i] > max then
       max = v[i]
       idx = i
     end
@@ -397,23 +294,19 @@ function argmax(v)
 end
 
 
-
 -- Produce similarity predictions for each sentence pair in the dataset.
-function LSTMSim_MultiTask:predict_dataset(dataset)
+function LSTMEnt:predict_dataset(dataset)
 
-  local predictions_sim = torch.Tensor(dataset.size)
-  local predictions_ent = torch.Tensor(dataset.size)
+  local predictions = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
-    pred = self:predict(lsent, rsent)
-    predictions_sim[i] = pred[1]
-    predictions_ent[i] = pred[2]
+    predictions[i] = self:predict(lsent, rsent)
   end
-  return {predictions_sim, predictions_ent}
+  return predictions
 end
 
-function LSTMSim_MultiTask:print_config()
+function LSTMEnt:print_config()
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
@@ -427,7 +320,7 @@ end
 --
 --Serialization
 --
-function LSTMSim_MultiTask:save(path)
+function LSTMEnt:save(path)
   local config = {
     batch_size = self.batch_size,
     emb_vecs = self.emb_vecs:float(),
@@ -446,9 +339,9 @@ function LSTMSim_MultiTask:save(path)
 
 end
 
-function LSTMSim_MultiTask.load(path)
+function LSTMEnt.load(path)
   local state = torch.load(path)
-  local model = LSTMSim_MultiTask.new(state.config)
+  local model = LSTMSim.new(state.config)
   model.params:copy(state.params)
   return model
 end

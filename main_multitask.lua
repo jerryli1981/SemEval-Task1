@@ -79,7 +79,7 @@ while true do
   file_idx = file_idx + 1
 end
 
-local model_class = LSTMSim_MultiTask_2
+local model_class = LSTM_Multitask_arc2
 
 local model
 

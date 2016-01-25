@@ -13,9 +13,9 @@ include('Vocab.lua')
 include('CRowAddTable.lua')
 include('LSTM.lua')
 include('LSTMSim.lua')
-include('LSTMSim_ent.lua')
-include('LSTMSim_MultiTask.lua')
-include('LSTMSim_MultiTask_2.lua')
+include('LSTMEnt.lua')
+include('LSTM_Multitask_arc1.lua')
+include('LSTM_Multitask_arc2.lua')
 
 
 HighwayMLP = require 'HighwayMLP'

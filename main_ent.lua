@@ -80,11 +80,11 @@ local model
 
 if args.load == 'true' then
   print('using previous model ' .. model_save_pre_path)
-  model = LSTMSim_ent.load(model_save_pre_path)
+  model = LSTMEnt.load(model_save_pre_path)
 else
   print('initialize new model')
 
-  model = LSTMSim_ent{
+  model = LSTMEnt{
     emb_vecs   = vecs,
     mem_dim    = args.dim,
     structure = args.structure,
@@ -122,7 +122,7 @@ for i = 1, num_epochs do
   if dev_ent_score >= best_dev_score then
     best_dev_score = dev_ent_score
 
-    best_dev_model = LSTMSim_ent{
+    best_dev_model = LSTMEnt{
       emb_vecs   = vecs,
       mem_dim    = args.dim,
       structure = args.structure,
