@@ -21,99 +21,18 @@ function CharCNNSim:__init(config)
 
   self.criterion = nn.DistKLDivCriterion()
 
-  self.CNN_module = CharCNN()
+  self.lCNN = CharCNN() 
+  self.rCNN = CharCNN() 
+
   self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
-    :add(self.CNN_module)
+    :add(self.lCNN)
     :add(self.sim_module)
   
   self.params, self.grad_params = modules:getParameters()
 
-  share_params(self.CNN_module, self.CNN_module)
-
-end
-
-function CharCNNSim:new_CNN_module()
-  print('Using char CNN sim module')
-
-  local linput, rinput = nn.Identity()(), nn.Identity()()
-  inputs = {linput, rinput}
-  vecs_to_input = nn.gModule(inputs,{linput, rinput})
-
-  local lvec = nn.Sequential()
-    --#alphabet(69) * 1014
-    :add(vecs_to_input)
-    :add(nn.SelectTable(1))
-    :add(nn.Transpose({1,2}))
-
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.ReLU())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    --336 * 256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.ReLU())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    --110*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-
-    ----108*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-
-    --106*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-
-    --104*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    --34*256
-    :add(nn.Reshape(18*256))
-    :add(nn.Linear(18*256, 512))
-
-  local rvec = nn.Sequential()
-    :add(vecs_to_input)
-    :add(nn.SelectTable(2))
-    :add(nn.Transpose({1,2}))
-    
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.ReLU())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    --336 * 256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.ReLU())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    --110*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-
-    ----108*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-
-    --106*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-
-    --104*256
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.ReLU())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    --34*256
-    :add(nn.Reshape(18*256))
-    :add(nn.Linear(18*256, 512))
-
-  local outputs = nn.ConcatTable(2):add(lvec):add(rvec)  
-  return outputs
+  share_params(self.rCNN, self.lCNN)
 
 end
 
@@ -178,7 +97,7 @@ function CharCNNSim:train(dataset)
         local linputs = self:seq2vec(lsent)
         local rinputs = self:seq2vec(rsent)
 
-        local inputs = {self.CNN_module:forward(linputs), self.CNN_module:forward(rinputs)}
+        local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
         
         local output = self.sim_module:forward(inputs)
         
@@ -191,8 +110,8 @@ function CharCNNSim:train(dataset)
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-        self.CNN_module:backward(linputs, rep_grad[1])
-        self.CNN_module:backward(rinputs, rep_grad[2])
+        self.lCNN:backward(linputs, rep_grad[1])
+        self.rCNN:backward(rinputs, rep_grad[2])
 
       end
 
@@ -212,18 +131,17 @@ function CharCNNSim:train(dataset)
   return avgloss
 end
 
-
 -- Predict the similarity of a sentence pair.
 function CharCNNSim:predict(lsent, rsent)
 
   local linputs = self:seq2vec(lsent)
   local rinputs = self:seq2vec(rsent)
 
-  local inputs = {linputs, rinputs}
-  local cnn_output = self.CNN_module:forward(inputs)
-  local output = self.sim_module:forward(cnn_output)
-
+  local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
+  
+  local output = self.sim_module:forward(inputs)
   return torch.range(1,5):dot(output:exp())
+  
 end
 
 
