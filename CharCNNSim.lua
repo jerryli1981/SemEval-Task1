@@ -7,7 +7,6 @@ function CharCNNSim:__init(config)
   self.reg           = config.reg           or 1e-4
   self.sim_nhidden   = config.sim_nhidden   or 50
 
-
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
   self.dict = {}
   for i = 1,#self.alphabet do
@@ -17,21 +16,12 @@ function CharCNNSim:__init(config)
   self.length = 600
   self.num_classes = 5
 
-  inputFrameSize = #self.alphabet
-  outputFrameSize = 256
-  kw = 6
-  kw2 = 3
-  dw = 1
-  pool_kw = 3
-  pool_dw = 3
-  --rep_dim = ((((self.length-kw)/dw + 1) - pool_kw ) / pool_dw + 1 ) * outputFrameSize
-
   -- optimizer configuration
   self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
 
   self.criterion = nn.DistKLDivCriterion()
-  
-  self.CNN_module = self:new_CNN_module()
+
+  self.CNN_module = CharCNN()
   self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
@@ -39,6 +29,8 @@ function CharCNNSim:__init(config)
     :add(self.sim_module)
   
   self.params, self.grad_params = modules:getParameters()
+
+  share_params(self.CNN_module, self.CNN_module)
 
 end
 
@@ -186,12 +178,9 @@ function CharCNNSim:train(dataset)
         local linputs = self:seq2vec(lsent)
         local rinputs = self:seq2vec(rsent)
 
-        inputs = {linputs, rinputs}
-
-        local cnn_output = self.CNN_module:forward(inputs)
-        --dbg()
-    
-        local output = self.sim_module:forward(cnn_output)
+        local inputs = {self.CNN_module:forward(linputs), self.CNN_module:forward(rinputs)}
+        
+        local output = self.sim_module:forward(inputs)
         
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, targets[j])
@@ -200,9 +189,10 @@ function CharCNNSim:train(dataset)
 
         local sim_grad = self.criterion:backward(output, targets[j])
 
-        local cnn_grad = self.sim_module:backward(cnn_output, sim_grad)
+        local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-        local input_grad = self.CNN_module:backward(inputs, cnn_grad)
+        self.CNN_module:backward(linputs, rep_grad[1])
+        self.CNN_module:backward(rinputs, rep_grad[2])
 
       end
 
