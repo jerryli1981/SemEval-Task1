@@ -3,8 +3,8 @@ local CharCNNSim = torch.class('CharCNNSim')
 function CharCNNSim:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
-  self.batch_size    = config.batch_size    or 25
-  self.reg           = config.reg           or 1e-4
+  self.batch_size    = config.batch_size    or 128
+  self.reg           = config.reg           or 0
   self.sim_nhidden   = config.sim_nhidden   or 50
 
 
@@ -14,20 +14,20 @@ function CharCNNSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 1014
+  self.length = 600
   self.num_classes = 5
 
   inputFrameSize = #self.alphabet
   outputFrameSize = 256
-  kw = 7
+  kw = 6
   kw2 = 3
   dw = 1
   pool_kw = 3
   pool_dw = 3
-  rep_dim = ((((self.length-kw)/dw + 1) - pool_kw ) / pool_dw + 1 ) * outputFrameSize
+  --rep_dim = ((((self.length-kw)/dw + 1) - pool_kw ) / pool_dw + 1 ) * outputFrameSize
 
   -- optimizer configuration
-  self.optim_state = { learningRate = self.learning_rate }
+  self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
 
   self.criterion = nn.DistKLDivCriterion()
   
@@ -56,33 +56,34 @@ function CharCNNSim:new_CNN_module()
     :add(nn.Transpose({1,2}))
 
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     --336 * 256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     --110*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
 
     ----108*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
 
     --106*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
 
     --104*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     --34*256
-    :add(nn.Reshape(8704))
+    :add(nn.Reshape(18*256))
+    :add(nn.Linear(18*256, 512))
 
   local rvec = nn.Sequential()
     :add(vecs_to_input)
@@ -90,33 +91,34 @@ function CharCNNSim:new_CNN_module()
     :add(nn.Transpose({1,2}))
     
     :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     --336 * 256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     --110*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
 
     ----108*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
 
     --106*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
 
     --104*256
     :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize, kw2, dw))
-    :add(nn.Threshold())
+    :add(nn.ReLU())
     :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
 
     --34*256
-    :add(nn.Reshape(8704))
+    :add(nn.Reshape(18*256))
+    :add(nn.Linear(18*256, 512))
 
   local outputs = nn.ConcatTable(2):add(lvec):add(rvec)  
   return outputs
@@ -136,9 +138,9 @@ function CharCNNSim:new_sim_module()
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(8704*2, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.Linear(512*2, self.num_classes))
+    --:add(nn.Sigmoid())    -- does better than tanh
+    --:add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
   return sim_module
 end
@@ -187,6 +189,7 @@ function CharCNNSim:train(dataset)
         inputs = {linputs, rinputs}
 
         local cnn_output = self.CNN_module:forward(inputs)
+        --dbg()
     
         local output = self.sim_module:forward(cnn_output)
         
@@ -212,7 +215,7 @@ function CharCNNSim:train(dataset)
       self.grad_params:add(self.reg, self.params)
       return loss, self.grad_params
     end
-    optim.adagrad(feval, self.params, self.optim_state)
+    optim.sgd(feval, self.params, self.optim_state)
     avgloss = avgloss/N
   end
   xlua.progress(dataset.size, dataset.size)
