@@ -57,6 +57,9 @@ function CharCNNSim:new_sim_module()
 end
 
 function CharCNNSim:train(dataset)
+  
+  self.lCNN:training()
+  self.rCNN:training()
 
   local indices = torch.randperm(dataset.size)
   local avgloss = 0.
@@ -141,7 +144,7 @@ function CharCNNSim:predict(lsent, rsent)
   
   local output = self.sim_module:forward(inputs)
   return torch.range(1,5):dot(output:exp())
-  
+
 end
 
 
