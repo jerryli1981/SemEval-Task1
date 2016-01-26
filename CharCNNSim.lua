@@ -138,12 +138,17 @@ end
 -- Predict the similarity of a sentence pair.
 function CharCNNSim:predict(lsent, rsent)
 
+  self.lCNN:evaluate()
+  self.rCNN:evaluate()
+
   local linputs = self:seq2vec(lsent)
   local rinputs = self:seq2vec(rsent)
 
   local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
   
   local output = self.sim_module:forward(inputs)
+  self.lCNN:forget()
+  self.rCNN:forget()
   return torch.range(1,5):dot(output:exp())
 
 end

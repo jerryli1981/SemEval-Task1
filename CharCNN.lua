@@ -92,3 +92,11 @@ end
 function CharCNN:parameters()
   return self.cnn_model:parameters()
 end
+
+-- Clear saved gradients
+function CharCNN:forget()
+
+  for i = 1, #self.gradInput do
+    self.gradInput[i]:zero()
+  end
+end
