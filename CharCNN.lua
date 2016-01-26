@@ -95,8 +95,5 @@ end
 
 -- Clear saved gradients
 function CharCNN:forget()
-
-  for i = 1, #self.gradInput do
-    self.gradInput[i]:zero()
-  end
+  self.gradInput:zero()
 end
