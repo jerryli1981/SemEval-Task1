@@ -3,7 +3,7 @@ local CharCNNSim = torch.class('CharCNNSim')
 function CharCNNSim:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
-  self.batch_size    = config.batch_size    or 128
+  self.batch_size    = config.batch_size    or 25
   self.reg           = config.reg           or 1e-4
   self.sim_nhidden   = config.sim_nhidden   or 50
 
@@ -17,7 +17,8 @@ function CharCNNSim:__init(config)
   self.num_classes = 5
 
   -- optimizer configuration
-  self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
+  --self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
+  self.optim_state = { learningRate = self.learning_rate }
 
   self.criterion = nn.DistKLDivCriterion()
 
@@ -127,7 +128,7 @@ function CharCNNSim:train(dataset)
       self.grad_params:add(self.reg, self.params)
       return loss, self.grad_params
     end
-    optim.sgd(feval, self.params, self.optim_state)
+    optim.adagrad(feval, self.params, self.optim_state)
     avgloss = avgloss/N
   end
   xlua.progress(dataset.size, dataset.size)
