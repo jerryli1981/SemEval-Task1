@@ -13,7 +13,7 @@ function CharCNNSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 600
+  self.length = 1014
   self.num_classes = 5
 
   -- optimizer configuration
@@ -49,7 +49,7 @@ function CharCNNSim:new_sim_module()
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(512*2, self.num_classes))
+    :add(nn.Linear(1024*2, self.num_classes))
     --:add(nn.Sigmoid())    -- does better than tanh
     --:add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -57,7 +57,7 @@ function CharCNNSim:new_sim_module()
 end
 
 function CharCNNSim:train(dataset)
-  
+
   self.lCNN:training()
   self.rCNN:training()
 
