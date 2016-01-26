@@ -50,9 +50,9 @@ function CharCNNSim:new_sim_module()
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(1024*2, self.num_classes))
-    --:add(nn.Sigmoid())    -- does better than tanh
-    --:add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.Linear(1024*2, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
   return sim_module
 end
