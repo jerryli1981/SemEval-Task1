@@ -89,6 +89,6 @@ function CharCNN:zeroGradParameters()
   self.cnn_model:zeroGradParameters()
 end
 
-function LSTM:parameters()
+function CharCNN:parameters()
   return self.cnn_model:parameters()
 end
