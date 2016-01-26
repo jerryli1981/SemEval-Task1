@@ -4,7 +4,7 @@ function CharCNNSim:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 128
-  self.reg           = config.reg           or 0
+  self.reg           = config.reg           or 1e-4
   self.sim_nhidden   = config.sim_nhidden   or 50
 
 
