@@ -64,7 +64,7 @@ function CharCNN:new_model()
   if self.cnn_model then
     share_params(graph, self.cnn_model)
   end
-  return graph:cuda()
+  return localize(graph)
 
 end
 

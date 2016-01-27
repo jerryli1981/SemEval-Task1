@@ -19,7 +19,7 @@ function CharCNNSim:__init(config)
   self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
   --self.optim_state = { learningRate = self.learning_rate }
 
-  self.criterion = nn.DistKLDivCriterion():cuda()
+  self.criterion = localize(nn.DistKLDivCriterion())
 
   -- initialize cnn model
   local cnn_config = {
@@ -61,7 +61,7 @@ function CharCNNSim:new_sim_module()
     :add(nn.Sigmoid())   -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-  return sim_module:cuda()
+  return localize(sim_module)
 end
 
 function CharCNNSim:train(dataset)
@@ -69,7 +69,7 @@ function CharCNNSim:train(dataset)
   self.lCNN:training()
   self.rCNN:training()
 
-  local indices = torch.randperm(dataset.size):cuda()
+  local indices = localize(torch.randperm(dataset.size))
   local avgloss = 0.
   local N = dataset.size / self.batch_size
 
@@ -77,7 +77,7 @@ function CharCNNSim:train(dataset)
     xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
 
-    local targets = torch.zeros(batch_size, self.num_classes):cuda()
+    local targets = localize(torch.zeros(batch_size, self.num_classes))
     for j=1, batch_size do
       local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_classes-1)+1
       local ceil, floor = math.ceil(sim), math.floor(sim)
@@ -202,7 +202,7 @@ function CharCNNSim:seq2vec(sequence)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return t:cuda()
+  return localize(t)
 end
 
 function CharCNNSim:save(path)

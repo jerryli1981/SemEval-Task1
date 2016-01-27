@@ -23,8 +23,6 @@ include('CharCNN.lua')
 
 HighwayMLP = require 'HighwayMLP'
 
---torch.setnumthreads(4)
-
 printf = utils.printf
 
 models_dir = 'trained_models'

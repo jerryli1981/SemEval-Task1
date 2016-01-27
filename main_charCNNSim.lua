@@ -17,10 +17,20 @@ Training script for semantic relatedness prediction on the SICK dataset.
 ]]
 
 if args.use_cuda >= 0 then
-  print("using CUDA on GPU")
+  print("Using CUDA on GPU")
   require 'cutorch'
   require 'cunn'
   cutorch.setDevice(args.use_cuda +1 )
+else
+  print("Using CPU")
+  torch.setnumthreads(4)
+end
+
+localize = function(thing)
+  if args.use_cuda >= 0 then
+    return thing:cuda()
+  end
+  return thing
 end
 
 if args.debug == 'dbg' then
