@@ -4,7 +4,6 @@ function CharCNNSim:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
-  self.reg           = config.reg           or 1e-4
   self.sim_nhidden   = config.sim_nhidden   or 50
 
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
@@ -22,8 +21,16 @@ function CharCNNSim:__init(config)
 
   self.criterion = nn.DistKLDivCriterion()
 
-  self.lCNN = CharCNN() 
-  self.rCNN = CharCNN() 
+  -- initialize cnn model
+  local cnn_config = {
+    seq_length = self.length,
+    inputFrameSize = #self.alphabet,
+    outputFrameSize = 256,
+    reshape_dim = 34 * 256
+  }
+
+  self.lCNN = CharCNN(cnn_config) 
+  self.rCNN = CharCNN(cnn_config) 
 
   self.sim_module = self:new_sim_module()
 
@@ -38,7 +45,7 @@ function CharCNNSim:__init(config)
 end
 
 function CharCNNSim:new_sim_module()
-  print('Using sim module')
+  print('Using charCNNSim module')
   local vecs_to_input
   local lvec, rvec = nn.Identity()(), nn.Identity()()
   
@@ -102,7 +109,9 @@ function CharCNNSim:train(dataset)
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
 
         local linputs = self:seq2vec(lsent)
+        linputs = linputs:transpose(1,2):contiguous()
         local rinputs = self:seq2vec(rsent)
+        rinputs = rinputs:transpose(1,2):contiguous()
 
         --dbg()
 
@@ -130,8 +139,9 @@ function CharCNNSim:train(dataset)
 
       -- regularization
       --loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+      --self.grad_params:add(self.reg, self.params)
+
       avgloss = avgloss + loss
-      self.grad_params:add(self.reg, self.params)
       return loss, self.grad_params
     end
     optim.sgd(feval, self.params, self.optim_state)
@@ -148,7 +158,9 @@ function CharCNNSim:predict(lsent, rsent)
   self.rCNN:evaluate()
 
   local linputs = self:seq2vec(lsent)
+  linputs = linputs:transpose(1,2):contiguous()
   local rinputs = self:seq2vec(rsent)
+  rinputs = rinputs:transpose(1,2):contiguous()
 
   local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
   

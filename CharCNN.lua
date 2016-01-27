@@ -8,25 +8,23 @@ function CharCNN:__init(config)
   parent.__init(self)
 
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
-  self.seq_length = 600
-  self.inputFrameSize = #self.alphabet*2
-  self.outputFrameSize = 256
+  self.seq_length = config.seq_length
+  self.inputFrameSize = config.inputFrameSize
+  self.outputFrameSize = config.outputFrameSize
   self.kw = 7
   self.kw2 = 3
   self.dw = 1
   self.pool_kw = 3
   self.pool_dw = 3
+  self.reshape_dim = config.reshape_dim
 
-  self.reshape_dim = 18 * self.outputFrameSize
-
-  self.cnn_model = self:new_model_2() 
+  self.cnn_model = self:new_model() 
 
 end
 
 function CharCNN:new_model()
 
   local cnn = nn.Sequential()
-    :add(nn.Transpose({1,2}))
 
     :add(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw))
     :add(nn.Threshold())
@@ -57,58 +55,6 @@ function CharCNN:new_model()
     :add(nn.Linear(1024, 1024))
     :add(nn.Threshold())
     :add(nn.Dropout(0.5))
-
-  local input = nn.Identity()()
-  local output = cnn(input)
-
-  local graph = nn.gModule({input}, {output})
-
-  -- share parameters
-  if self.cnn_model then
-    share_params(graph, self.cnn_model)
-  end
-  return graph
-
-end
-
-function CharCNN:new_model_2()
-
-  local cnn = nn.Sequential()
-    :add(nn.Transpose({1,2}))
-
-    :add(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw))
-    :add(nn.Threshold())
-    :add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
-
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw, self.dw))
-    :add(nn.Threshold())
-    :add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
-
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
-    :add(nn.Threshold())
-
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
-    :add(nn.Threshold())
-
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
-    :add(nn.Threshold())
-
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
-    :add(nn.Threshold())
-    :add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
-
-    :add(nn.Reshape(self.reshape_dim))
-    :add(nn.Linear(self.reshape_dim, 1024))
-    :add(nn.Threshold())
-    :add(nn.Dropout(0.5))
-
-    :add(nn.Linear(1024, 1024))
-    :add(nn.Threshold())
-    :add(nn.Dropout(0.5))
-
-    :add(nn.Linear(1024, 5))
-    :add(nn.LogSoftMax())
-
 
   local input = nn.Identity()()
   local output = cnn(input)
