@@ -34,6 +34,21 @@ printf('num train = %d\n', train_dataset.size)
 printf('num dev = %d\n', dev_dataset.size)
 printf('num test = %d\n', test_dataset.size)
 
+-- get paths
+local file_idx = 1
+local model_save_path, model_save_pre_path
+
+while true do
+  model_save_path = string.format(
+    models_dir .. '/charcnn-%d.th', file_idx)
+  model_save_pre_path = string.format(
+    models_dir .. '/charcnn-%d.th', file_idx-1)
+  if lfs.attributes(model_save_path) == nil then
+   break
+  end
+  file_idx = file_idx + 1
+end
+
 
 local model
 
@@ -48,6 +63,8 @@ else
   model = model_class{
     sim_nhidden = args.sim_nhidden
     }  
+
+
 end
 
 -- number of epochs to train
@@ -74,6 +91,13 @@ for i = 1, num_epochs do
   if dev_score >= best_dev_score then
     best_dev_score = dev_score
 
+    best_dev_model = model_class{
+      sim_nhidden = args.sim_nhidden
+      }
+    
+
+    best_dev_model.params:copy(model.params)
+
   end
 
 end
@@ -86,4 +110,8 @@ printf('-- using model with dev score = %.4f\n', best_dev_score)
 local test_predictions = best_dev_model:predict_dataset(test_dataset)
 local test_score = pearson(test_predictions, test_dataset.sim_labels)
 printf('-- test score: %.4f\n', test_score)
+
+--write models to disk
+print('writing model to ' .. model_save_path)
+best_dev_model:save(model_save_path)
 
