@@ -1,6 +1,6 @@
-local CharCNNSim = torch.class('CharCNNSim')
+local CharCNNSim_2 = torch.class('CharCNNSim_2')
 
-function CharCNNSim:__init(config)
+function CharCNNSim_2:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -13,7 +13,7 @@ function CharCNNSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 1014
+  self.length = 600
   self.num_classes = 5
 
   -- optimizer configuration
@@ -22,48 +22,17 @@ function CharCNNSim:__init(config)
 
   self.criterion = nn.DistKLDivCriterion()
 
-  self.lCNN = CharCNN() 
-  self.rCNN = CharCNN() 
-
-  self.sim_module = self:new_sim_module()
-
-  local modules = nn.Parallel()
-    :add(self.lCNN)
-    :add(self.sim_module)
+  self.CNN = CharCNN() 
   
-  self.params, self.grad_params = modules:getParameters()
+  self.params, self.grad_params = self.CNN:getParameters()
 
-  share_params(self.rCNN, self.lCNN)
+  share_params(self.CNN, self.CNN)
 
 end
 
-function CharCNNSim:new_sim_module()
-  print('Using sim module')
-  local vecs_to_input
-  local lvec, rvec = nn.Identity()(), nn.Identity()()
-  
-  --local mult_dist = nn.CMulTable(){lvec, rvec}
-  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-  --local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  --local vec_dist_feats = nn.JoinTable(1){lvec, rvec}
-  local vecs_to_input = nn.gModule({lvec, rvec}, {add_dist})
+function CharCNNSim_2:train(dataset)
 
-   -- define similarity model architecture
-  local sim_module = nn.Sequential()
-    :add(vecs_to_input)
-    :add(nn.Linear(1024, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
-
-    --:add(nn.Linear(1024*2, self.num_classes))
-    :add(nn.LogSoftMax())
-  return sim_module
-end
-
-function CharCNNSim:train(dataset)
-
-  self.lCNN:training()
-  self.rCNN:training()
+  self.CNN:training()
 
   local indices = torch.randperm(dataset.size)
   local avgloss = 0.
@@ -104,13 +73,10 @@ function CharCNNSim:train(dataset)
         local linputs = self:seq2vec(lsent)
         local rinputs = self:seq2vec(rsent)
 
-        --dbg()
+        local inputs = nn.JoinTable(1):forward{linputs,rinputs}
+        
+        local output = self.CNN:forward(inputs)
 
-        local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
-        --dbg()
-        
-        local output = self.sim_module:forward(inputs)
-        
         -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, targets[j])
 
@@ -118,10 +84,7 @@ function CharCNNSim:train(dataset)
 
         local sim_grad = self.criterion:backward(output, targets[j])
 
-        local rep_grad = self.sim_module:backward(inputs, sim_grad)
-
-        self.lCNN:backward(linputs, rep_grad[1])
-        self.rCNN:backward(rinputs, rep_grad[2])
+        local rep_grad = self.CNN:backward(inputs, sim_grad)
 
       end
 
@@ -142,26 +105,26 @@ function CharCNNSim:train(dataset)
 end
 
 -- Predict the similarity of a sentence pair.
-function CharCNNSim:predict(lsent, rsent)
+function CharCNNSim_2:predict(lsent, rsent)
 
-  self.lCNN:evaluate()
-  self.rCNN:evaluate()
+  self.CNN:evaluate()
 
   local linputs = self:seq2vec(lsent)
   local rinputs = self:seq2vec(rsent)
 
-  local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
-  
-  local output = self.sim_module:forward(inputs)
-  self.lCNN:forget()
-  self.rCNN:forget()
+  local inputs = nn.JoinTable(1):forward{linputs,rinputs}
+        
+  local output = self.CNN:forward(inputs)
+
+  self.CNN:forget()
+
   return torch.range(1,5):dot(output:exp())
 
 end
 
 
 -- Produce similarity predictions for each sentence pair in the dataset.
-function CharCNNSim:predict_dataset(dataset)
+function CharCNNSim_2:predict_dataset(dataset)
 
   local predictions = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
@@ -176,7 +139,7 @@ function trim(s)
   return (s:gsub("^%s*(.-)%s*$", "%1"))
 end
 
-function CharCNNSim:seq2vec(sequence)
+function CharCNNSim_2:seq2vec(sequence)
 
   local s = ''
   --print(sequence)

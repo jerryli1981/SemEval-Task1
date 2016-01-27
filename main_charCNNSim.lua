@@ -37,13 +37,15 @@ printf('num test = %d\n', test_dataset.size)
 
 local model
 
+model_class = CharCNNSim_2
+
 if args.load == 'true' then
   print('using previous model ' .. model_save_pre_path)
-  model = CharCNNSim.load(model_save_pre_path)
+  model = model_class.load(model_save_pre_path)
 else
   print('initialize new model')
 
-  model = CharCNNSim{
+  model = model_class{
     sim_nhidden = args.sim_nhidden
     }  
 end
