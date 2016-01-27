@@ -7,7 +7,7 @@ function CharCNNSim_2:__init(config)
   self.sim_nhidden   = config.sim_nhidden   or 50
 
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
-  self.length = 600
+  self.length = 100
 
   self.dict = {}
   for i = 1,#self.alphabet do
@@ -24,8 +24,8 @@ function CharCNNSim_2:__init(config)
   local cnn_config = {
     seq_length = self.length,
     inputFrameSize = #self.alphabet * 2 ,
-    outputFrameSize = 256,
-    reshape_dim = 18 * 256
+    outputFrameSize = 128,
+    reshape_dim = 31 * 128
   }
 
   self.CNN = CharCNN(cnn_config) 
