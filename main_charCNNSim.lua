@@ -12,8 +12,23 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -h,--sim_nhidden (default 50)   Number of sim_hidden
   -g,--debug  (default nil)       Debug setting  
   -o,--load (default nil)         Using previous model
+  -c,--use_cuda (default nil)     Using cuda
 
 ]]
+
+if args.use_cuda == 'true' then
+  print("cuda")
+  Tensor = torch.CudaTensor
+else
+  Tensor = torch.Tensor
+end
+
+localize = function(thing)
+  if args.use_cuda == 'true' then
+    return thing:cuda()
+  end
+  return thing
+end
 
 if args.debug == 'dbg' then
 	dbg = require('debugger')
@@ -83,9 +98,10 @@ for i = 1, num_epochs do
   printf('loss is: %.4f\n', loss)
   printf('-- finished epoch in %.2fs\n', sys.clock() - start)
 
-  local dev_predictions = model:predict_dataset(dev_dataset)
-  local dev_score = pearson(dev_predictions, dev_dataset.sim_labels)
+  --local dev_predictions = model:predict_dataset(dev_dataset)
+  --local dev_score = pearson(dev_predictions, dev_dataset.sim_labels)
 
+  --[[
   printf('--dev score: %.4f\n', dev_score)
 
   if dev_score >= best_dev_score then
@@ -99,11 +115,14 @@ for i = 1, num_epochs do
     best_dev_model.params:copy(model.params)
 
   end
+  --]]
 
 end
 
 printf('finished training in %.2fs\n', sys.clock() - train_start)
 
+
+--[[
 -- evaluate
 header('Evaluating on test set')
 printf('-- using model with dev score = %.4f\n', best_dev_score)
@@ -114,4 +133,4 @@ printf('-- test score: %.4f\n', test_score)
 --write models to disk
 print('writing model to ' .. model_save_path)
 best_dev_model:save(model_save_path)
-
+--]]

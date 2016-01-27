@@ -25,19 +25,19 @@ function CharCNN:new_model()
 
   local cnn = nn.Sequential()
 
-    :add(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw))
-    :add(nn.Threshold())
-    :add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
+    :add(localize(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)))
+    :add(localize(nn.Threshold()))
+    :add(localize(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)))
 
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw, self.dw))
-    :add(nn.Threshold())
-    :add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
+    --:add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw, self.dw))
+    --:add(nn.Threshold())
+    --:add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
 
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
-    :add(nn.Threshold())
+    --:add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
+    --:add(nn.Threshold())
 
-    :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
-    :add(nn.Threshold())
+    --:add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
+    --:add(nn.Threshold())
 
     --:add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
     --:add(nn.Threshold())
@@ -46,8 +46,8 @@ function CharCNN:new_model()
     --:add(nn.Threshold())
     --:add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
 
-    :add(nn.Reshape(self.reshape_dim))
-    :add(nn.Linear(self.reshape_dim, 1024))
+    :add(localize(nn.Reshape(self.reshape_dim)))
+    :add(localize(nn.Linear(self.reshape_dim, 1024)))
     --:add(nn.Threshold())
     --:add(nn.Dropout(0.5))
 

@@ -26,7 +26,7 @@ function CharCNNSim:__init(config)
     seq_length = self.length,
     inputFrameSize = #self.alphabet,
     outputFrameSize = 256,
-    reshape_dim = 15 * 256
+    reshape_dim = 64 * 256
   }
 
   self.lCNN = CharCNN(cnn_config) 
@@ -57,10 +57,10 @@ function CharCNNSim:new_sim_module()
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(1024*2, self.sim_nhidden))
-    :add(nn.Sigmoid())    -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
-    :add(nn.LogSoftMax())
+    :add(localize(nn.Linear(1024*2, self.sim_nhidden)))
+    :add(localize(nn.Sigmoid()))   -- does better than tanh
+    :add(localize(nn.Linear(self.sim_nhidden, self.num_classes)))
+    :add(localize(nn.LogSoftMax()))
   return sim_module
 end
 
@@ -202,7 +202,7 @@ function CharCNNSim:seq2vec(sequence)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return t
+  return localize(t)
 end
 
 function CharCNNSim:save(path)

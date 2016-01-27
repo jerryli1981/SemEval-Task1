@@ -23,6 +23,8 @@ include('CharCNN.lua')
 
 HighwayMLP = require 'HighwayMLP'
 
+require 'cutorch'
+
 torch.setnumthreads(4)
 
 printf = utils.printf
