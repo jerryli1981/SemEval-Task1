@@ -54,7 +54,7 @@ function CharCNN:new_model()
     :add(nn.Threshold())
     :add(nn.Dropout(0.5))
 
-    :add(nn.Linear(1024, 1024))
+    :add(nn.Linear(1024, 100))
     :add(nn.Threshold())
     :add(nn.Dropout(0.5))
     :add(nn.Normalize(2))
