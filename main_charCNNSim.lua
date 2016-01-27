@@ -12,22 +12,15 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -h,--sim_nhidden (default 50)   Number of sim_hidden
   -g,--debug  (default nil)       Debug setting  
   -o,--load (default nil)         Using previous model
-  -c,--use_cuda (default nil)     Using cuda
+  -c,--use_cuda (default -1)     Using cuda
 
 ]]
 
-if args.use_cuda == 'true' then
-  print("cuda")
-  Tensor = torch.CudaTensor
-else
-  Tensor = torch.Tensor
-end
-
-localize = function(thing)
-  if args.use_cuda == 'true' then
-    return thing:cuda()
-  end
-  return thing
+if args.use_cuda >= 0 then
+  print("using CUDA on GPU")
+  require 'cutorch'
+  require 'cunn'
+  cutorch.setDevice(args.use_cuda +1 )
 end
 
 if args.debug == 'dbg' then

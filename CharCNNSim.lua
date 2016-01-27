@@ -19,7 +19,7 @@ function CharCNNSim:__init(config)
   self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
   --self.optim_state = { learningRate = self.learning_rate }
 
-  self.criterion = nn.DistKLDivCriterion()
+  self.criterion = nn.DistKLDivCriterion():cuda()
 
   -- initialize cnn model
   local cnn_config = {
@@ -57,11 +57,11 @@ function CharCNNSim:new_sim_module()
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(localize(nn.Linear(1024*2, self.sim_nhidden)))
-    :add(localize(nn.Sigmoid()))   -- does better than tanh
-    :add(localize(nn.Linear(self.sim_nhidden, self.num_classes)))
-    :add(localize(nn.LogSoftMax()))
-  return sim_module
+    :add(nn.Linear(1024*2, self.sim_nhidden))
+    :add(nn.Sigmoid())   -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
+  return sim_module:cuda()
 end
 
 function CharCNNSim:train(dataset)
@@ -69,7 +69,7 @@ function CharCNNSim:train(dataset)
   self.lCNN:training()
   self.rCNN:training()
 
-  local indices = torch.randperm(dataset.size)
+  local indices = torch.randperm(dataset.size):cuda()
   local avgloss = 0.
   local N = dataset.size / self.batch_size
 
@@ -77,7 +77,7 @@ function CharCNNSim:train(dataset)
     xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
 
-    local targets = torch.zeros(batch_size, self.num_classes)
+    local targets = torch.zeros(batch_size, self.num_classes):cuda()
     for j=1, batch_size do
       local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_classes-1)+1
       local ceil, floor = math.ceil(sim), math.floor(sim)
@@ -110,10 +110,10 @@ function CharCNNSim:train(dataset)
         local rinputs = self:seq2vec(rsent)
         rinputs = rinputs:transpose(1,2):contiguous()
 
-        --dbg()
+        
 
         local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
-        --dbg()
+        
         
         local output = self.sim_module:forward(inputs)
         
@@ -121,9 +121,9 @@ function CharCNNSim:train(dataset)
         local example_loss = self.criterion:forward(output, targets[j])
 
         loss = loss + example_loss
-
+        --dbg()
         local sim_grad = self.criterion:backward(output, targets[j])
-
+       
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
         self.lCNN:backward(linputs, rep_grad[1])
@@ -202,7 +202,7 @@ function CharCNNSim:seq2vec(sequence)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return localize(t)
+  return t:cuda()
 end
 
 function CharCNNSim:save(path)
