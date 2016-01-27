@@ -12,7 +12,7 @@ function CharCNNSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 1014
+  self.length = 100
   self.num_classes = 5
 
   -- optimizer configuration
@@ -25,8 +25,8 @@ function CharCNNSim:__init(config)
   local cnn_config = {
     seq_length = self.length,
     inputFrameSize = #self.alphabet,
-    outputFrameSize = 256,
-    reshape_dim = 34 * 256
+    outputFrameSize = 128,
+    reshape_dim = 31 * 128
   }
 
   self.lCNN = CharCNN(cnn_config) 
