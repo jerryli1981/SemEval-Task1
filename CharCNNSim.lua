@@ -42,20 +42,20 @@ function CharCNNSim:new_sim_module()
   local vecs_to_input
   local lvec, rvec = nn.Identity()(), nn.Identity()()
   
-  --local mult_dist = nn.CMulTable(){lvec, rvec}
-  --local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-  --local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  local vec_dist_feats = nn.JoinTable(1){lvec, rvec}
+  local mult_dist = nn.CMulTable(){lvec, rvec}
+  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
+  local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
+  --local vec_dist_feats = nn.JoinTable(1){lvec, rvec}
   local vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats})
 
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    --:add(nn.Linear(1024*2, self.sim_nhidden))
-    --:add(nn.Sigmoid())    -- does better than tanh
-    --:add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.Linear(1024*2, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
 
-    :add(nn.Linear(1024*2, self.num_classes))
+    --:add(nn.Linear(1024*2, self.num_classes))
     :add(nn.LogSoftMax())
   return sim_module
 end
@@ -105,6 +105,7 @@ function CharCNNSim:train(dataset)
         local rinputs = self:seq2vec(rsent)
 
         local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
+        --dbg()
         
         local output = self.sim_module:forward(inputs)
         

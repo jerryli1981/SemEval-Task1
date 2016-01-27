@@ -57,6 +57,7 @@ function CharCNN:new_model()
     :add(nn.Linear(1024, 1024))
     :add(nn.Threshold())
     :add(nn.Dropout(0.5))
+    :add(nn.Normalize(2))
 
   local input = nn.Identity()()
   local output = cnn(input)
