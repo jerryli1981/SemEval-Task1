@@ -144,9 +144,11 @@ function CharCNNSim_2:predict(lsent, rsent)
   rinputs = rinputs:transpose(1,2):contiguous()
 
   local inputs = nn.JoinTable(2):forward{linputs,rinputs}
-        
-  local output = self.CNN:forward(inputs)
-        
+
+  local cnn_output = self.CNN:forward(inputs)
+
+  local output = self.sim_module:forward(cnn_output)
+              
   self.CNN:forget()
 
   return torch.range(1,5):dot(output:exp())
