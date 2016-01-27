@@ -7,7 +7,6 @@ local CharCNN, parent = torch.class('CharCNN', 'nn.Module')
 function CharCNN:__init(config)
   parent.__init(self)
 
-  self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
   self.seq_length = config.seq_length
   self.inputFrameSize = config.inputFrameSize
   self.outputFrameSize = config.outputFrameSize
