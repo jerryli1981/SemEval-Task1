@@ -20,8 +20,6 @@ include('LSTM_Multitask_arc1.lua')
 include('LSTM_Multitask_arc2.lua')
 include('CharCNN.lua')
 
-require 'Squeeze'
-
 HighwayMLP = require 'HighwayMLP'
 
 printf = utils.printf
