@@ -26,7 +26,7 @@ function CharCNNSim:__init(config)
     seq_length = self.length,
     inputFrameSize = #self.alphabet,
     outputFrameSize = 256,
-    reshape_dim = 64 * 256
+    reshape_dim = 3 * 256
   }
 
   self.lCNN = CharCNN(cnn_config) 
