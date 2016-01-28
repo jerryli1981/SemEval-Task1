@@ -19,18 +19,18 @@ function CharCNNLSTMSim:__init(config)
 
   self.tok_length = 8
 
-  self.outputFrameSize = 64
+  self.outputFrameSize = 256
 
   self.reshape_dim = 2 * self.outputFrameSize
 
   self.emb_dim  = self.reshape_dim
 
-  self.mem_dim = 100
+  self.mem_dim = 150
 
   self.num_classes = 5
 
   -- optimizer configuration
-  --self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
+ -- self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
   self.optim_state = { learningRate = self.learning_rate }
 
   self.criterion = localize(nn.DistKLDivCriterion())
@@ -41,9 +41,6 @@ function CharCNNLSTMSim:__init(config)
     num_layers = self.num_layers,
   }
 
-  self.llstm = LSTM(lstm_config) -- "left" LSTM
-  self.rlstm = LSTM(lstm_config) -- "right" LSTM
-
   -- initialize cnn model
   local cnn_config = {
     seq_length = self.tok_length,
@@ -53,6 +50,8 @@ function CharCNNLSTMSim:__init(config)
   }
 
   self.tok_CNN = CharCNN(cnn_config)
+  self.llstm = LSTM(lstm_config)
+  self.rlstm = LSTM(lstm_config)
 
   self.sim_module = self:new_sim_module()
 
@@ -63,8 +62,8 @@ function CharCNNLSTMSim:__init(config)
   
   self.params, self.grad_params = modules:getParameters()
 
-  share_params(self.tok_CNN, self.tok_CNN)
-  share_params(self.rlstm, self.llstm)
+  --share_params(self.tok_CNN, self.tok_CNN)
+  --share_params(self.rlstm, self.llstm)
 
 end
 
@@ -134,7 +133,7 @@ function CharCNNLSTMSim:train(dataset)
         local linputs = {}
         for k = 1, #lsent do
           tok = lsent[k]
-          local tok_vec = self:tok2vec(tok)
+          tok_vec = self:tok2vec(tok)
           tok_vec = tok_vec:transpose(1,2):contiguous()
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(linputs, tok_cnn_output)
@@ -144,7 +143,7 @@ function CharCNNLSTMSim:train(dataset)
         local rinputs = {}
         for k = 1, #rsent do
           tok = rsent[k]
-          local tok_vec = self:tok2vec(tok)
+          tok_vec = self:tok2vec(tok)
           tok_vec = tok_vec:transpose(1,2):contiguous()
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(rinputs, tok_cnn_output)
@@ -188,7 +187,7 @@ function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_gr
   left = self.llstm:backward(linputs, lgrad)
   for k = 1, #lsent do
     tok = lsent[k]
-    local tok_vec = self:tok2vec(tok)
+    tok_vec = self:tok2vec(tok)
     tok_vec = tok_vec:transpose(1,2):contiguous()
     vec = nn.NarrowTable(k):forward(left)[1]
     self.tok_CNN:backward(tok_vec, vec)
@@ -198,7 +197,7 @@ function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_gr
 
   for k = 1, #rsent do
     tok = rsent[k]
-    local tok_vec = self:tok2vec(tok)
+    tok_vec = self:tok2vec(tok)
     tok_vec = tok_vec:transpose(1,2):contiguous()
     vec = nn.NarrowTable(k):forward(right)[1]
     self.tok_CNN:backward(tok_vec, vec)
