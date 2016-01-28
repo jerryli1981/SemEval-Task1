@@ -60,9 +60,9 @@ local model_save_path, model_save_pre_path
 
 while true do
   model_save_path = string.format(
-    models_dir .. '/charcnn-%d.th', file_idx)
+    models_dir .. '/charcnn-%s.%d.th', args.structure, file_idx)
   model_save_pre_path = string.format(
-    models_dir .. '/charcnn-%d.th', file_idx-1)
+    models_dir .. '/charcnn-%s.%d.th', args.structure, file_idx-1)
   if lfs.attributes(model_save_path) == nil then
    break
   end
