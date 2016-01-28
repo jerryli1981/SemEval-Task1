@@ -164,7 +164,7 @@ function CharCNNSim:predict(lsent, rsent)
   local output = self.sim_module:forward(inputs)
   self.lCNN:forget()
   self.rCNN:forget()
-  return torch.range(1,5):dot(output:exp())
+  return localize(torch.range(1,5)):dot(output:exp())
 
 end
 
@@ -172,7 +172,7 @@ end
 -- Produce similarity predictions for each sentence pair in the dataset.
 function CharCNNSim:predict_dataset(dataset)
 
-  local predictions = torch.Tensor(dataset.size)
+  local predictions = localize(torch.Tensor(dataset.size))
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]

@@ -101,10 +101,9 @@ for i = 1, num_epochs do
   printf('loss is: %.4f\n', loss)
   printf('-- finished epoch in %.2fs\n', sys.clock() - start)
 
-  --local dev_predictions = model:predict_dataset(dev_dataset)
-  --local dev_score = pearson(dev_predictions, dev_dataset.sim_labels)
+  local dev_predictions = model:predict_dataset(dev_dataset)
+  local dev_score = pearson(dev_predictions, localize(dev_dataset.sim_labels))
 
-  --[[
   printf('--dev score: %.4f\n', dev_score)
 
   if dev_score >= best_dev_score then
@@ -118,22 +117,21 @@ for i = 1, num_epochs do
     best_dev_model.params:copy(model.params)
 
   end
-  --]]
 
 end
 
 printf('finished training in %.2fs\n', sys.clock() - train_start)
 
 
---[[
 -- evaluate
 header('Evaluating on test set')
 printf('-- using model with dev score = %.4f\n', best_dev_score)
 local test_predictions = best_dev_model:predict_dataset(test_dataset)
-local test_score = pearson(test_predictions, test_dataset.sim_labels)
+local test_score = pearson(test_predictions, localize(test_dataset.sim_labels))
 printf('-- test score: %.4f\n', test_score)
 
 --write models to disk
 print('writing model to ' .. model_save_path)
 best_dev_model:save(model_save_path)
---]]
+
+
