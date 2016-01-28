@@ -20,6 +20,7 @@ if args.use_cuda >= 0 then
   print("Using CUDA on GPU")
   require 'cutorch'
   require 'cunn'
+  require 'cudnn'
   cutorch.setDevice(args.use_cuda +1 )
 else
   print("Using CPU")
@@ -122,13 +123,14 @@ end
 
 printf('finished training in %.2fs\n', sys.clock() - train_start)
 
-
+--[[
 -- evaluate
 header('Evaluating on test set')
 printf('-- using model with dev score = %.4f\n', best_dev_score)
 local test_predictions = best_dev_model:predict_dataset(test_dataset)
 local test_score = pearson(test_predictions, localize(test_dataset.sim_labels))
 printf('-- test score: %.4f\n', test_score)
+--]]
 
 --write models to disk
 print('writing model to ' .. model_save_path)

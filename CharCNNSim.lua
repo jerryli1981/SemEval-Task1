@@ -12,7 +12,7 @@ function CharCNNSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 1014
+  self.length = 200
   self.num_classes = 5
 
   -- optimizer configuration
@@ -26,7 +26,7 @@ function CharCNNSim:__init(config)
     seq_length = self.length,
     inputFrameSize = #self.alphabet,
     outputFrameSize = 256,
-    reshape_dim = 34 * 256
+    reshape_dim = 64 * 256
   }
 
   self.lCNN = CharCNN(cnn_config) 
@@ -104,39 +104,21 @@ function CharCNNSim:train(dataset)
       for j = 1, batch_size do
         local idx = indices[i + j - 1]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
-
         local linputs = self:seq2vec(lsent)
         linputs = linputs:transpose(1,2):contiguous()
         local rinputs = self:seq2vec(rsent)
         rinputs = rinputs:transpose(1,2):contiguous()
-
-        
-
         local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
-        
-        
         local output = self.sim_module:forward(inputs)
-        
-        -- compute loss and backpropagate
         local example_loss = self.criterion:forward(output, targets[j])
-
         loss = loss + example_loss
-        --dbg()
         local sim_grad = self.criterion:backward(output, targets[j])
-       
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
-
         self.lCNN:backward(linputs, rep_grad[1])
         self.rCNN:backward(rinputs, rep_grad[2])
-
       end
-
       loss = loss / batch_size
       self.grad_params:div(batch_size)
-
-      -- regularization
-      --loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
-      --self.grad_params:add(self.reg, self.params)
 
       avgloss = avgloss + loss
       return loss, self.grad_params

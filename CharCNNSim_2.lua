@@ -7,7 +7,7 @@ function CharCNNSim_2:__init(config)
   self.sim_nhidden   = config.sim_nhidden   or 50
 
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
-  self.length = 100
+  self.length = 200
 
   self.dict = {}
   for i = 1,#self.alphabet do
@@ -19,13 +19,13 @@ function CharCNNSim_2:__init(config)
   -- optimizer configuration
   self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
 
-  self.criterion = nn.DistKLDivCriterion()
+  self.criterion = localize(nn.DistKLDivCriterion())
 
   local cnn_config = {
     seq_length = self.length,
     inputFrameSize = #self.alphabet * 2 ,
-    outputFrameSize = 128,
-    reshape_dim = 31 * 128
+    outputFrameSize = 256,
+    reshape_dim = 64 * 256
   }
 
   self.CNN = CharCNN(cnn_config) 
@@ -36,8 +36,8 @@ function CharCNNSim_2:__init(config)
     :add(self.sim_module)
   
   self.params, self.grad_params = modules:getParameters()
-  self.params:normal():mul(5e-2)
-  self.grad_params:normal():mul(5e-2)
+  --self.params:normal():mul(5e-2)
+  --self.grad_params:normal():mul(5e-2)
 
   share_params(self.CNN, self.CNN)
 
@@ -52,14 +52,14 @@ function CharCNNSim_2:new_sim_module()
     :add(nn.Sigmoid())    -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
-  return sim_module
+  return localize(sim_module)
 end
 
 function CharCNNSim_2:train(dataset)
 
   self.CNN:training()
 
-  local indices = torch.randperm(dataset.size)
+  local indices = localize(torch.randperm(dataset.size))
   local avgloss = 0.
   local N = dataset.size / self.batch_size
 
@@ -67,7 +67,7 @@ function CharCNNSim_2:train(dataset)
     xlua.progress(i, dataset.size)
     local batch_size = math.min(i + self.batch_size - 1, dataset.size) - i + 1
 
-    local targets = torch.zeros(batch_size, self.num_classes)
+    local targets = localize(torch.zeros(batch_size, self.num_classes))
     for j=1, batch_size do
       local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_classes-1)+1
       local ceil, floor = math.ceil(sim), math.floor(sim)
@@ -100,10 +100,10 @@ function CharCNNSim_2:train(dataset)
         local rinputs = self:seq2vec(rsent)
         rinputs = rinputs:transpose(1,2):contiguous()
 
-        local inputs = nn.JoinTable(2):forward{linputs,rinputs}
+        local inputs = localize(nn.JoinTable(2)):forward{linputs,rinputs}
 
         local cnn_output = self.CNN:forward(inputs)
-
+        --dbg()
         local output = self.sim_module:forward(cnn_output)
 
         -- compute loss and backpropagate
@@ -143,7 +143,7 @@ function CharCNNSim_2:predict(lsent, rsent)
   local rinputs = self:seq2vec(rsent)
   rinputs = rinputs:transpose(1,2):contiguous()
 
-  local inputs = nn.JoinTable(2):forward{linputs,rinputs}
+  local inputs = localize(nn.JoinTable(2)):forward{linputs,rinputs}
 
   local cnn_output = self.CNN:forward(inputs)
 
@@ -151,7 +151,7 @@ function CharCNNSim_2:predict(lsent, rsent)
               
   self.CNN:forget()
 
-  return torch.range(1,5):dot(output:exp())
+  return localize(torch.range(1,5)):dot(output:exp())
 
 end
 
@@ -159,7 +159,7 @@ end
 -- Produce similarity predictions for each sentence pair in the dataset.
 function CharCNNSim_2:predict_dataset(dataset)
 
-  local predictions = torch.Tensor(dataset.size)
+  local predictions = localize(torch.Tensor(dataset.size))
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
@@ -189,10 +189,27 @@ function CharCNNSim_2:seq2vec(sequence)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return t
+  return localize(t)
 end
 
+function CharCNNSim_2:save(path)
+  local config = {
+    sim_nhidden = self.sim_nhidden
+  }
 
+  torch.save(path, {
+    params = self.params,
+    config = config,
+    })
+
+end
+
+function CharCNNSim_2.load(path)
+  local state = torch.load(path)
+  local model = CharCNNSim_2.new(state.config)
+  model.params:copy(state.params)
+  return model
+end
 
 
 
