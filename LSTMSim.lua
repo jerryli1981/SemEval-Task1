@@ -317,6 +317,8 @@ function LSTMSim:train(dataset)
         local linputs = self.emb_vecs:index(1, lsent:long()):double()
         local rinputs = self.emb_vecs:index(1, rsent:long()):double()
 
+        dbg()
+
          -- get sentence representations
         local inputs
         if self.structure == 'lstm' then

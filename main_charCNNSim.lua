@@ -79,6 +79,8 @@ if args.structure == "merge" then
 elseif args.structure == "sep" then
   print("Using separate structure")
   model_class = CharCNNSim
+elseif args.structure == "cnnlstm" then
+  model_class = CharCNNLSTMSim
 end
 
 if args.load == 'true' then
