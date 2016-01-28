@@ -9,7 +9,6 @@ function CharCNNLSTMSim:__init(config)
 
   self.num_layers    = config.num_layers    or 1
 
-  --self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
   self.dict = {}
   for i = 1,#self.alphabet do
@@ -140,8 +139,8 @@ function CharCNNLSTMSim:train(dataset)
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(linputs, tok_cnn_output)
         end
-        linputs = nn.Reshape(#lsent, self.reshape_dim):forward(nn.JoinTable(1):forward(linputs))
-
+        linputs = localize(nn.Reshape(#lsent, self.reshape_dim):forward(nn.JoinTable(1):forward(linputs)))
+       
         local rinputs = {}
         for k = 1, #rsent do
           tok = rsent[k]
@@ -150,10 +149,9 @@ function CharCNNLSTMSim:train(dataset)
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(rinputs, tok_cnn_output)
         end
-        rinputs = nn.Reshape(#rsent, self.reshape_dim):forward(nn.JoinTable(1):forward(rinputs))
-
+        rinputs = localize(nn.Reshape(#rsent, self.reshape_dim):forward(nn.JoinTable(1):forward(rinputs)))
+       
         inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
-        
         local output = self.sim_module:forward(inputs)
 
         local example_loss = self.criterion:forward(output, targets[j])
@@ -162,9 +160,7 @@ function CharCNNLSTMSim:train(dataset)
         local sim_grad = self.criterion:backward(output, targets[j])
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
-
         self:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
-
       end
       loss = loss / batch_size
       self.grad_params:div(batch_size)
@@ -185,13 +181,11 @@ end
 -- LSTM CNN backward propagation
 function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
-  lgrad = torch.zeros(#lsent, self.mem_dim)
-  rgrad = torch.zeros(#rsent, self.mem_dim)
+  lgrad = localize(torch.zeros(#lsent, self.mem_dim))
+  rgrad = localize(torch.zeros(#rsent, self.mem_dim))
   lgrad[#lsent] = rep_grad[1]
   rgrad[#rsent] = rep_grad[2]
-
   left = self.llstm:backward(linputs, lgrad)
-
   for k = 1, #lsent do
     tok = lsent[k]
     local tok_vec = self:tok2vec(tok)
@@ -227,7 +221,7 @@ function CharCNNLSTMSim:predict(lsent, rsent)
     tok_cnn_output = self.tok_CNN:forward(tok_vec)
     table.insert(linputs, tok_cnn_output)
   end
-  linputs = nn.Reshape(#lsent, self.reshape_dim):forward(nn.JoinTable(1):forward(linputs))
+  linputs = localize(nn.Reshape(#lsent, self.reshape_dim):forward(nn.JoinTable(1):forward(linputs)))
 
   local rinputs = {}
   for k = 1, #rsent do
@@ -237,7 +231,7 @@ function CharCNNLSTMSim:predict(lsent, rsent)
     tok_cnn_output = self.tok_CNN:forward(tok_vec)
     table.insert(rinputs, tok_cnn_output)
   end
-  rinputs = nn.Reshape(#rsent, self.reshape_dim):forward(nn.JoinTable(1):forward(rinputs))
+  rinputs = localize(nn.Reshape(#rsent, self.reshape_dim):forward(nn.JoinTable(1):forward(rinputs)))
 
   inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
   

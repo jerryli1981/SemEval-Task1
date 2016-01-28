@@ -21,22 +21,22 @@ function LSTM:__init(config)
   -- for backpropagation
   local ctable_init, ctable_grad, htable_init, htable_grad
   if self.num_layers == 1 then
-    ctable_init = torch.zeros(self.mem_dim)
-    htable_init = torch.zeros(self.mem_dim)
-    ctable_grad = torch.zeros(self.mem_dim)
-    htable_grad = torch.zeros(self.mem_dim)
+    ctable_init = localize(torch.zeros(self.mem_dim))
+    htable_init = localize(torch.zeros(self.mem_dim))
+    ctable_grad = localize(torch.zeros(self.mem_dim))
+    htable_grad = localize(torch.zeros(self.mem_dim))
   else
     ctable_init, ctable_grad, htable_init, htable_grad = {}, {}, {}, {}
     for i = 1, self.num_layers do
-      ctable_init[i] = torch.zeros(self.mem_dim)
-      htable_init[i] = torch.zeros(self.mem_dim)
-      ctable_grad[i] = torch.zeros(self.mem_dim)
-      htable_grad[i] = torch.zeros(self.mem_dim)
+      ctable_init[i] = localize(torch.zeros(self.mem_dim))
+      htable_init[i] = localize(torch.zeros(self.mem_dim))
+      ctable_grad[i] = localize(torch.zeros(self.mem_dim))
+      htable_grad[i] = localize(torch.zeros(self.mem_dim))
     end
   end
   self.initial_values = {ctable_init, htable_init}
   self.gradInput = {
-    torch.zeros(self.in_dim),
+    localize(torch.zeros(self.in_dim)),
     ctable_grad,
     htable_grad
   }
@@ -88,7 +88,7 @@ function LSTM:new_cell()
   -- if LSTM is single-layered, this makes htable/ctable Tensors (instead of tables).
   -- this avoids some quirks with nngraph involving tables of size 1.
   htable, ctable = nn.Identity()(htable), nn.Identity()(ctable)
-  local cell = nn.gModule({input, ctable_p, htable_p}, {ctable, htable})
+  local cell = localize(nn.gModule({input, ctable_p, htable_p}, {ctable, htable}))
 
   -- share parameters
   if self.master_cell then
@@ -117,7 +117,6 @@ function LSTM:forward(inputs, reverse)
     else
       prev_output = self.initial_values
     end
-
     local outputs = cell:forward({input, prev_output[1], prev_output[2]})
     local ctable, htable = unpack(outputs)
     if self.num_layers == 1 then
@@ -143,7 +142,7 @@ function LSTM:backward(inputs, grad_outputs, reverse)
     error("No cells to backpropagate through")
   end
 
-  local input_grads = torch.Tensor(inputs:size())
+  local input_grads = localize(torch.Tensor(inputs:size()))
   for t = size, 1, -1 do
     local input = reverse and inputs[size - t + 1] or inputs[t]
     local grad_output = reverse and grad_outputs[size - t + 1] or grad_outputs[t]
