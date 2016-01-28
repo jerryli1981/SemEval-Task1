@@ -3,7 +3,7 @@ local CharCNNSim = torch.class('CharCNNSim')
 function CharCNNSim:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
-  self.batch_size    = config.batch_size    or 25
+  self.batch_size    = config.batch_size    or 128
   self.sim_nhidden   = config.sim_nhidden   or 50
 
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
@@ -12,7 +12,7 @@ function CharCNNSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 200
+  self.length = 1014
   self.num_classes = 5
 
   -- optimizer configuration
@@ -26,7 +26,7 @@ function CharCNNSim:__init(config)
     seq_length = self.length,
     inputFrameSize = #self.alphabet,
     outputFrameSize = 256,
-    reshape_dim = 3 * 256
+    reshape_dim = 34 * 256
   }
 
   self.lCNN = CharCNN(cnn_config) 
