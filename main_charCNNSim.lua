@@ -13,6 +13,7 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -g,--debug  (default nil)       Debug setting  
   -o,--load (default nil)         Using previous model
   -c,--use_cuda (default -1)     Using cuda
+  -s,--structure(default nil)     Arc 1 or Arc2
 
 ]]
 
@@ -70,8 +71,15 @@ end
 
 
 local model
+local model_class
 
-model_class = CharCNNSim
+if args.structure == "merge" then
+  print("Using merge structure")
+  model_class = CharCNNSim_2
+elseif args.structure == "sep" then
+  print("Using separate structure")
+  model_class = CharCNNSim
+end
 
 if args.load == 'true' then
   print('using previous model ' .. model_save_pre_path)
