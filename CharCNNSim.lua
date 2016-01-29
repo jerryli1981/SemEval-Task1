@@ -6,13 +6,24 @@ function CharCNNSim:__init(config)
   self.batch_size    = config.batch_size    or 128
   self.sim_nhidden   = config.sim_nhidden   or 50
 
+  self.num_layers    = config.num_layers    or 1
+
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
   self.dict = {}
   for i = 1,#self.alphabet do
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 200
+  self.length = 100
+
+  self.outputFrameSize = 128
+
+  self.reshape_dim = 96 * self.outputFrameSize
+
+  self.emb_dim  = self.outputFrameSize
+
+  self.mem_dim = 100
+
   self.num_classes = 5
 
   -- optimizer configuration
@@ -25,12 +36,21 @@ function CharCNNSim:__init(config)
   local cnn_config = {
     seq_length = self.length,
     inputFrameSize = #self.alphabet,
-    outputFrameSize = 256,
-    reshape_dim = 98 * 256
+    outputFrameSize = self.outputFrameSize,
+    reshape_dim = self.reshape_dim
   }
 
   self.lCNN = CharCNN(cnn_config) 
   self.rCNN = CharCNN(cnn_config) 
+
+  local lstm_config = {
+    in_dim = self.emb_dim,
+    mem_dim = self.mem_dim,
+    num_layers = self.num_layers,
+  }
+
+  self.llstm = LSTM(lstm_config)
+  self.rlstm = LSTM(lstm_config)
 
   self.sim_module = self:new_sim_module()
 
@@ -57,7 +77,7 @@ function CharCNNSim:new_sim_module()
    -- define similarity model architecture
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(1024*2, self.sim_nhidden))
+    :add(nn.Linear(self.mem_dim*2, self.sim_nhidden))
     :add(nn.Sigmoid())   -- does better than tanh
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -108,14 +128,24 @@ function CharCNNSim:train(dataset)
         linputs = linputs:transpose(1,2):contiguous()
         local rinputs = self:seq2vec(rsent)
         rinputs = rinputs:transpose(1,2):contiguous()
-        local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
+
+        lcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.lCNN:forward(linputs)))
+        
+        rcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.rCNN:forward(rinputs)))
+
+        inputs = {self.llstm:forward(lcnn_outputs), self.rlstm:forward(rcnn_outputs)}
         local output = self.sim_module:forward(inputs)
         local example_loss = self.criterion:forward(output, targets[j])
         loss = loss + example_loss
         local sim_grad = self.criterion:backward(output, targets[j])
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
-        self.lCNN:backward(linputs, rep_grad[1])
-        self.rCNN:backward(rinputs, rep_grad[2])
+
+        left = self.llstm:backward(lcnn_outputs, rep_grad[1])
+        right = self.rlstm:backward(rcnn_outputs, rep_grad[2])
+
+        self.lCNN:backward(linputs, left)
+        self.rCNN:backward(rinputs, right)
+
       end
       loss = loss / batch_size
       self.grad_params:div(batch_size)
@@ -136,16 +166,26 @@ function CharCNNSim:predict(lsent, rsent)
   self.lCNN:evaluate()
   self.rCNN:evaluate()
 
+  self.llstm:evaluate()
+  self.rlstm:evaluate()
+
   local linputs = self:seq2vec(lsent)
   linputs = linputs:transpose(1,2):contiguous()
   local rinputs = self:seq2vec(rsent)
   rinputs = rinputs:transpose(1,2):contiguous()
 
-  local inputs = {self.lCNN:forward(linputs), self.rCNN:forward(rinputs)}
+  lcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.lCNN:forward(linputs)))
   
+  rcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.rCNN:forward(rinputs)))
+
+  inputs = {self.llstm:forward(lcnn_outputs), self.rlstm:forward(rcnn_outputs)}
   local output = self.sim_module:forward(inputs)
+
   self.lCNN:forget()
   self.rCNN:forget()
+  self.llstm:forget()
+  self.rlstm:forget()
+
   return localize(torch.range(1,5)):dot(output:exp())
 
 end
