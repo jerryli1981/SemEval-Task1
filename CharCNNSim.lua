@@ -3,7 +3,7 @@ local CharCNNSim = torch.class('CharCNNSim')
 function CharCNNSim:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
-  self.batch_size    = config.batch_size    or 128
+  self.batch_size    = config.batch_size    or 50
   self.sim_nhidden   = config.sim_nhidden   or 50
 
   self.num_layers    = config.num_layers    or 1
@@ -27,8 +27,8 @@ function CharCNNSim:__init(config)
   self.num_classes = 5
 
   -- optimizer configuration
-  self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
-  --self.optim_state = { learningRate = self.learning_rate }
+  --self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
+  self.optim_state = { learningRate = self.learning_rate }
 
   self.criterion = localize(nn.DistKLDivCriterion())
 
@@ -56,11 +56,13 @@ function CharCNNSim:__init(config)
 
   local modules = nn.Parallel()
     :add(self.lCNN)
+    :add(self.llstm)
     :add(self.sim_module)
   
   self.params, self.grad_params = modules:getParameters()
 
   share_params(self.rCNN, self.lCNN)
+  share_params(self.rlstm, self.llstm)
 
 end
 
@@ -88,6 +90,8 @@ function CharCNNSim:train(dataset)
 
   self.lCNN:training()
   self.rCNN:training()
+  self.llstm:training()
+  self.rlstm:training()
 
   local indices = localize(torch.randperm(dataset.size))
   local avgloss = 0.
@@ -128,11 +132,11 @@ function CharCNNSim:train(dataset)
         linputs = linputs:transpose(1,2):contiguous()
         local rinputs = self:seq2vec(rsent)
         rinputs = rinputs:transpose(1,2):contiguous()
-
-        lcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.lCNN:forward(linputs)))
         
-        rcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.rCNN:forward(rinputs)))
-
+        lcnn_outputs = localize(nn.View(96, self.outputFrameSize):forward(self.lCNN:forward(linputs)))
+        
+        rcnn_outputs = localize(nn.View(96, self.outputFrameSize):forward(self.rCNN:forward(rinputs)))
+        
         inputs = {self.llstm:forward(lcnn_outputs), self.rlstm:forward(rcnn_outputs)}
         local output = self.sim_module:forward(inputs)
         local example_loss = self.criterion:forward(output, targets[j])
@@ -153,7 +157,7 @@ function CharCNNSim:train(dataset)
       avgloss = avgloss + loss
       return loss, self.grad_params
     end
-    optim.sgd(feval, self.params, self.optim_state)
+    optim.adagrad(feval, self.params, self.optim_state)
     avgloss = avgloss/N
   end
   xlua.progress(dataset.size, dataset.size)
@@ -177,7 +181,6 @@ function CharCNNSim:predict(lsent, rsent)
   lcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.lCNN:forward(linputs)))
   
   rcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.rCNN:forward(rinputs)))
-
   inputs = {self.llstm:forward(lcnn_outputs), self.rlstm:forward(rcnn_outputs)}
   local output = self.sim_module:forward(inputs)
 

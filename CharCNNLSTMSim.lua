@@ -15,15 +15,15 @@ function CharCNNLSTMSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.tok_length = 8
+  self.tok_length = 5
 
-  self.outputFrameSize = 128
+  self.outputFrameSize = 100
 
-  self.reshape_dim = 4 * self.outputFrameSize
+  self.reshape_dim = 3 * self.outputFrameSize
 
   self.emb_dim  = self.reshape_dim
 
-  self.mem_dim = 150
+  self.mem_dim = 100
 
   self.num_classes = 5
 

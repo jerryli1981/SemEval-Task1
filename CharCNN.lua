@@ -6,8 +6,8 @@ function CharCNN:__init(config)
   self.seq_length = config.seq_length
   self.inputFrameSize = config.inputFrameSize
   self.outputFrameSize = config.outputFrameSize
-  self.kw = 4
-  self.kw2 = 2
+  self.kw = 2
+  self.kw2 = 1
   self.dw = 1
   self.pool_kw = 2
   self.pool_dw = 2
@@ -21,16 +21,18 @@ function CharCNN:new_model()
   
   local cnn = nn.Sequential()
       :add(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw))
-      :add(nn.Tanh())
+      --:add(nn.Tanh())
+      :add(nn.Threshold())
       --:add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
 
-      --:add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw, self.dw))
+      :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw, self.dw))
+      :add(nn.Threshold())
       --:add(nn.Tanh())
       --:add(nn.TemporalMaxPooling(self.pool_kw, self.pool_dw))
 
       :add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
-      :add(nn.Tanh())
-
+      --:add(nn.Tanh())
+      :add(nn.Threshold())
       --:add(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw))
       --:add(nn.Tanh())
 
