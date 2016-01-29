@@ -81,6 +81,8 @@ elseif args.structure == "sep" then
   model_class = CharCNNSim
 elseif args.structure == "cnnlstm" then
   model_class = CharCNNLSTMSim
+elseif args.structure == "lstm" then
+  model_class = CharLSTMSim
 end
 
 if args.load == 'true' then
