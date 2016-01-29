@@ -12,8 +12,8 @@ Training script for semantic relatedness prediction on the SICK dataset.
   -h,--sim_nhidden (default 50)   Number of sim_hidden
   -g,--debug  (default nil)       Debug setting  
   -o,--load (default nil)         Using previous model
-  -c,--use_cuda (default -1)     Using cuda
-  -s,--structure(default nil)     Arc 1 or Arc2
+  -c,--use_cuda (default -1)      Using cuda
+  -s,--structure(default nil)     try different structure
 
 ]]
 
@@ -76,12 +76,14 @@ local model_class
 if args.structure == "merge" then
   print("Using merge structure")
   model_class = CharCNNSim_2
-elseif args.structure == "sep" then
-  print("Using separate structure")
+elseif args.structure == "cnn" then
+  print("Using pure cnn")
   model_class = CharCNNSim
+
 elseif args.structure == "cnnlstm" then
   model_class = CharCNNLSTMSim
 elseif args.structure == "lstm" then
+  print("Using pure lstm")
   model_class = CharLSTMSim
 end
 
@@ -94,7 +96,6 @@ else
   model = model_class{
     sim_nhidden = args.sim_nhidden
     }  
-
 
 end
 

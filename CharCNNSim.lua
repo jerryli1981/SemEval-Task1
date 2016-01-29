@@ -3,10 +3,8 @@ local CharCNNSim = torch.class('CharCNNSim')
 function CharCNNSim:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
-  self.batch_size    = config.batch_size    or 50
+  self.batch_size    = config.batch_size    or 128
   self.sim_nhidden   = config.sim_nhidden   or 50
-
-  self.num_layers    = config.num_layers    or 1
 
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
   self.dict = {}
@@ -14,84 +12,90 @@ function CharCNNSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 100
+  -- maxlen is 113
+  self.length = 115
+
+  self.inputFrameSize = #self.alphabet
 
   self.outputFrameSize = 128
 
-  self.reshape_dim = 96 * self.outputFrameSize
+  self.reshape_dim = 9 * self.outputFrameSize
 
-  self.emb_dim  = self.outputFrameSize
-
-  self.mem_dim = 100
+  self.mem_dim = self.reshape_dim
 
   self.num_classes = 5
 
+  self.kw = 7
+  self.dw = 1
+  self.kw2 = 3
+
+  self.pool_kw = 3
+  self.pool_dw = 3
+
   -- optimizer configuration
-  --self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
-  self.optim_state = { learningRate = self.learning_rate }
+  self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
 
   self.criterion = localize(nn.DistKLDivCriterion())
 
-  -- initialize cnn model
-  local cnn_config = {
-    seq_length = self.length,
-    inputFrameSize = #self.alphabet,
-    outputFrameSize = self.outputFrameSize,
-    reshape_dim = self.reshape_dim
-  }
-
-  self.lCNN = CharCNN(cnn_config) 
-  self.rCNN = CharCNN(cnn_config) 
-
-  local lstm_config = {
-    in_dim = self.emb_dim,
-    mem_dim = self.mem_dim,
-    num_layers = self.num_layers,
-  }
-
-  self.llstm = LSTM(lstm_config)
-  self.rlstm = LSTM(lstm_config)
-
   self.sim_module = self:new_sim_module()
-
-  local modules = nn.Parallel()
-    :add(self.lCNN)
-    :add(self.llstm)
-    :add(self.sim_module)
   
-  self.params, self.grad_params = modules:getParameters()
+  self.params, self.grad_params = self.sim_module:getParameters()
 
-  share_params(self.rCNN, self.lCNN)
-  share_params(self.rlstm, self.llstm)
+  share_params(self.sim_module, self.sim_module)
 
 end
 
 function CharCNNSim:new_sim_module()
-  print('Using charCNNSim module')
-  local vecs_to_input
-  local lvec, rvec = nn.Identity()(), nn.Identity()()
-  
-  local mult_dist = nn.CMulTable(){lvec, rvec}
-  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-  local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  local vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats})
 
-   -- define similarity model architecture
+  print("Call pure cnn sim module")
+
+  local linput, rinput = nn.Identity()(), nn.Identity()()
+
+  local lvec = nn.Linear(self.reshape_dim, 512)(
+        nn.Reshape(self.reshape_dim)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.outputFrameSize,self.outputFrameSize,self.kw2, self.dw)(
+
+        nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw)(
+
+        nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(linput))))))))))
+
+  local rvec = nn.Linear(self.reshape_dim, 512)(
+        nn.Reshape(self.reshape_dim)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.outputFrameSize,self.outputFrameSize,self.kw2, self.dw2)(
+
+        nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw)(
+
+        nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(rinput))))))))))
+
+  --local mult_dist = nn.CMulTable(){lvec, rvec}
+  --local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
+  --local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
+  local vec_dist_feats = nn.JoinTable(1){lvec, rvec}
+
+  local vecs_to_input = nn.gModule({linput, rinput}, {vec_dist_feats})
+
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(self.mem_dim*2, self.sim_nhidden))
-    :add(nn.Sigmoid())   -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.Linear(512*2, self.num_classes))
+    --:add(nn.Tanh())   -- does better than tanh
+    --:add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
+
   return localize(sim_module)
+
 end
 
 function CharCNNSim:train(dataset)
-
-  self.lCNN:training()
-  self.rCNN:training()
-  self.llstm:training()
-  self.rlstm:training()
 
   local indices = localize(torch.randperm(dataset.size))
   local avgloss = 0.
@@ -129,26 +133,13 @@ function CharCNNSim:train(dataset)
         local idx = indices[i + j - 1]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
         local linputs = self:seq2vec(lsent)
-        linputs = linputs:transpose(1,2):contiguous()
         local rinputs = self:seq2vec(rsent)
-        rinputs = rinputs:transpose(1,2):contiguous()
-        
-        lcnn_outputs = localize(nn.View(96, self.outputFrameSize):forward(self.lCNN:forward(linputs)))
-        
-        rcnn_outputs = localize(nn.View(96, self.outputFrameSize):forward(self.rCNN:forward(rinputs)))
-        
-        inputs = {self.llstm:forward(lcnn_outputs), self.rlstm:forward(rcnn_outputs)}
+        inputs = {linputs, rinputs}
         local output = self.sim_module:forward(inputs)
         local example_loss = self.criterion:forward(output, targets[j])
         loss = loss + example_loss
         local sim_grad = self.criterion:backward(output, targets[j])
-        local rep_grad = self.sim_module:backward(inputs, sim_grad)
-
-        left = self.llstm:backward(lcnn_outputs, rep_grad[1])
-        right = self.rlstm:backward(rcnn_outputs, rep_grad[2])
-
-        self.lCNN:backward(linputs, left)
-        self.rCNN:backward(rinputs, right)
+        self.sim_module:backward(inputs, sim_grad)
 
       end
       loss = loss / batch_size
@@ -157,7 +148,7 @@ function CharCNNSim:train(dataset)
       avgloss = avgloss + loss
       return loss, self.grad_params
     end
-    optim.adagrad(feval, self.params, self.optim_state)
+    optim.sgd(feval, self.params, self.optim_state)
     avgloss = avgloss/N
   end
   xlua.progress(dataset.size, dataset.size)
@@ -167,32 +158,14 @@ end
 -- Predict the similarity of a sentence pair.
 function CharCNNSim:predict(lsent, rsent)
 
-  self.lCNN:evaluate()
-  self.rCNN:evaluate()
-
-  self.llstm:evaluate()
-  self.rlstm:evaluate()
-
   local linputs = self:seq2vec(lsent)
-  linputs = linputs:transpose(1,2):contiguous()
   local rinputs = self:seq2vec(rsent)
-  rinputs = rinputs:transpose(1,2):contiguous()
-
-  lcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.lCNN:forward(linputs)))
-  
-  rcnn_outputs = localize(nn.Reshape(96, self.outputFrameSize):forward(self.rCNN:forward(rinputs)))
-  inputs = {self.llstm:forward(lcnn_outputs), self.rlstm:forward(rcnn_outputs)}
+  inputs = {linputs, rinputs}
   local output = self.sim_module:forward(inputs)
-
-  self.lCNN:forget()
-  self.rCNN:forget()
-  self.llstm:forget()
-  self.rlstm:forget()
 
   return localize(torch.range(1,5)):dot(output:exp())
 
 end
-
 
 -- Produce similarity predictions for each sentence pair in the dataset.
 function CharCNNSim:predict_dataset(dataset)
@@ -217,9 +190,10 @@ function CharCNNSim:seq2vec(sequence)
   for i=1, #sequence do
     s = s .. sequence[i] .. " "
   end
+  s = s:gsub("%s+", "")
   s = trim(s)
+
   local s = s:lower()
-  
   local t = torch.Tensor(#self.alphabet, self.length)
   t:zero()
   for i = #s, math.max(#s - self.length + 1, 1), -1 do
@@ -227,7 +201,7 @@ function CharCNNSim:seq2vec(sequence)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return localize(t)
+  return localize(t:transpose(1,2))
 end
 
 function CharCNNSim:save(path)
