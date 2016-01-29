@@ -15,13 +15,11 @@ function CharCNNLSTMSim:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.seq_length = 100
-
   self.tok_length = 8
 
-  self.outputFrameSize = 256
+  self.outputFrameSize = 128
 
-  self.reshape_dim = 2 * self.outputFrameSize
+  self.reshape_dim = 4 * self.outputFrameSize
 
   self.emb_dim  = self.reshape_dim
 
@@ -56,14 +54,14 @@ function CharCNNLSTMSim:__init(config)
   self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
-    :add(self.tok_CNN)
+    --:add(self.tok_CNN)
     :add(llstm)
     :add(self.sim_module)
   
   self.params, self.grad_params = modules:getParameters()
 
   --share_params(self.tok_CNN, self.tok_CNN)
-  --share_params(self.rlstm, self.llstm)
+  share_params(self.rlstm, self.llstm)
 
 end
 
@@ -148,6 +146,7 @@ function CharCNNLSTMSim:train(dataset)
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(rinputs, tok_cnn_output)
         end
+
         rinputs = localize(nn.Reshape(#rsent, self.reshape_dim):forward(nn.JoinTable(1):forward(rinputs)))
        
         inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
@@ -185,6 +184,8 @@ function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_gr
   lgrad[#lsent] = rep_grad[1]
   rgrad[#rsent] = rep_grad[2]
   left = self.llstm:backward(linputs, lgrad)
+
+  --[[
   for k = 1, #lsent do
     tok = lsent[k]
     tok_vec = self:tok2vec(tok)
@@ -192,9 +193,11 @@ function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_gr
     vec = nn.NarrowTable(k):forward(left)[1]
     self.tok_CNN:backward(tok_vec, vec)
   end
+  --]]
 
   right = self.rlstm:backward(rinputs, rgrad)
 
+  --[[
   for k = 1, #rsent do
     tok = rsent[k]
     tok_vec = self:tok2vec(tok)
@@ -202,6 +205,7 @@ function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_gr
     vec = nn.NarrowTable(k):forward(right)[1]
     self.tok_CNN:backward(tok_vec, vec)
   end
+  --]]
   
 end
 
@@ -222,6 +226,7 @@ function CharCNNLSTMSim:predict(lsent, rsent)
   end
   linputs = localize(nn.Reshape(#lsent, self.reshape_dim):forward(nn.JoinTable(1):forward(linputs)))
 
+
   local rinputs = {}
   for k = 1, #rsent do
     tok = rsent[k]
@@ -230,7 +235,9 @@ function CharCNNLSTMSim:predict(lsent, rsent)
     tok_cnn_output = self.tok_CNN:forward(tok_vec)
     table.insert(rinputs, tok_cnn_output)
   end
+
   rinputs = localize(nn.Reshape(#rsent, self.reshape_dim):forward(nn.JoinTable(1):forward(rinputs)))
+
 
   inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
   
@@ -259,26 +266,6 @@ end
 
 function trim(s)
   return (s:gsub("^%s*(.-)%s*$", "%1"))
-end
-
-function CharCNNLSTMSim:seq2vec(sequence)
-
-  local s = ''
-  --print(sequence)
-  for i=1, #sequence do
-    s = s .. sequence[i] .. " "
-  end
-  s = trim(s)
-  local s = s:lower()
-  
-  local t = torch.Tensor(#self.alphabet, self.seq_length)
-  t:zero()
-  for i = #s, math.max(#s - self.seq_length + 1, 1), -1 do
-    if self.dict[s:sub(i,i)] then
-      t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
-    end
-  end
-  return localize(t)
 end
 
 function CharCNNLSTMSim:tok2vec(token)
