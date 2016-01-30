@@ -20,7 +20,7 @@ include('LSTM_Multitask_arc2.lua')
 include('CharCNNLSTMSim_tok.lua')
 include('CharCNNLSTMSim_seq.lua')
 include('CharLSTMSim.lua')
-include('CharCNN.lua')
+include('CharCNNSim.lua')
 
 HighwayMLP = require 'HighwayMLP'
 
