@@ -13,13 +13,13 @@ include('Vocab.lua')
 include('CRowAddTable.lua')
 include('LSTM.lua')
 include('LSTMSim.lua')
-include('CharCNNSim.lua')
-include('CharCNNSim_2.lua')
-include('CharCNNLSTMSim.lua')
-include('CharLSTMSim.lua')
 include('LSTMEnt.lua')
 include('LSTM_Multitask_arc1.lua')
 include('LSTM_Multitask_arc2.lua')
+
+include('CharCNNLSTMSim_tok.lua')
+include('CharCNNLSTMSim_seq.lua')
+include('CharLSTMSim.lua')
 include('CharCNN.lua')
 
 HighwayMLP = require 'HighwayMLP'

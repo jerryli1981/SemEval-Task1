@@ -73,14 +73,15 @@ end
 local model
 local model_class
 
-if args.structure == "merge" then
-  print("Using merge structure")
-  model_class = CharCNNSim_2
+if args.structure == "cnnlstmseq" then
+  print("Using sequence cnn plus LSTM")
+  model_class = CharCNNLSTMSim_seq
 elseif args.structure == "cnn" then
   print("Using pure cnn")
   model_class = CharCNNSim
-elseif args.structure == "cnnlstm" then
-  model_class = CharCNNLSTMSim
+elseif args.structure == "cnnlstmtok" then
+  print("Using tok cnn plus LSTM")
+  model_class = CharCNNLSTMSim_tok
 elseif args.structure == "lstm" then
   print("Using pure lstm")
   model_class = CharLSTMSim

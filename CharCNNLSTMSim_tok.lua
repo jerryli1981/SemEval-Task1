@@ -1,6 +1,6 @@
-local CharCNNLSTMSim = torch.class('CharCNNLSTMSim')
+local CharCNNLSTMSim_tok = torch.class('CharCNNLSTMSim_tok')
 
-function CharCNNLSTMSim:__init(config)
+function CharCNNLSTMSim_tok:__init(config)
 
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -54,19 +54,19 @@ function CharCNNLSTMSim:__init(config)
   self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
-    --:add(self.tok_CNN)
+    :add(self.tok_CNN)
     :add(llstm)
     :add(self.sim_module)
   
   self.params, self.grad_params = modules:getParameters()
 
-  --share_params(self.tok_CNN, self.tok_CNN)
+  share_params(self.tok_CNN, self.tok_CNN)
   share_params(self.rlstm, self.llstm)
 
 end
 
-function CharCNNLSTMSim:new_sim_module()
-  print('Using charCNNLSTMSim module')
+function CharCNNLSTMSim_tok:new_sim_module()
+  print('Using charCNNLSTMSim tok module')
   local vecs_to_input
   local lvec, rvec = nn.Identity()(), nn.Identity()()
   
@@ -85,7 +85,7 @@ function CharCNNLSTMSim:new_sim_module()
   return localize(sim_module)
 end
 
-function CharCNNLSTMSim:train(dataset)
+function CharCNNLSTMSim_tok:train(dataset)
 
   self.tok_CNN:training()
   self.llstm:training()
@@ -132,7 +132,6 @@ function CharCNNLSTMSim:train(dataset)
         for k = 1, #lsent do
           tok = lsent[k]
           tok_vec = self:tok2vec(tok)
-          tok_vec = tok_vec:transpose(1,2):contiguous()
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(linputs, tok_cnn_output)
         end
@@ -142,7 +141,6 @@ function CharCNNLSTMSim:train(dataset)
         for k = 1, #rsent do
           tok = rsent[k]
           tok_vec = self:tok2vec(tok)
-          tok_vec = tok_vec:transpose(1,2):contiguous()
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(rinputs, tok_cnn_output)
         end
@@ -150,6 +148,7 @@ function CharCNNLSTMSim:train(dataset)
         rinputs = localize(nn.Reshape(#rsent, self.reshape_dim):forward(nn.JoinTable(1):forward(rinputs)))
        
         inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
+
         local output = self.sim_module:forward(inputs)
 
         local example_loss = self.criterion:forward(output, targets[j])
@@ -159,6 +158,7 @@ function CharCNNLSTMSim:train(dataset)
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
         self:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
+
       end
       loss = loss / batch_size
       self.grad_params:div(batch_size)
@@ -177,7 +177,7 @@ function CharCNNLSTMSim:train(dataset)
 end
 
 -- LSTM CNN backward propagation
-function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function CharCNNLSTMSim_tok:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
   lgrad = localize(torch.zeros(#lsent, self.mem_dim))
   rgrad = localize(torch.zeros(#rsent, self.mem_dim))
@@ -210,7 +210,7 @@ function CharCNNLSTMSim:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, rep_gr
 end
 
 -- Predict the similarity of a sentence pair.
-function CharCNNLSTMSim:predict(lsent, rsent)
+function CharCNNLSTMSim_tok:predict(lsent, rsent)
 
   self.tok_CNN:evaluate()
   self.llstm:evaluate()
@@ -220,7 +220,6 @@ function CharCNNLSTMSim:predict(lsent, rsent)
   for k = 1, #lsent do
     tok = lsent[k]
     local tok_vec = self:tok2vec(tok)
-    tok_vec = tok_vec:transpose(1,2):contiguous()
     tok_cnn_output = self.tok_CNN:forward(tok_vec)
     table.insert(linputs, tok_cnn_output)
   end
@@ -231,7 +230,6 @@ function CharCNNLSTMSim:predict(lsent, rsent)
   for k = 1, #rsent do
     tok = rsent[k]
     local tok_vec = self:tok2vec(tok)
-    tok_vec = tok_vec:transpose(1,2):contiguous()
     tok_cnn_output = self.tok_CNN:forward(tok_vec)
     table.insert(rinputs, tok_cnn_output)
   end
@@ -253,7 +251,7 @@ end
 
 
 -- Produce similarity predictions for each sentence pair in the dataset.
-function CharCNNLSTMSim:predict_dataset(dataset)
+function CharCNNLSTMSim_tok:predict_dataset(dataset)
 
   local predictions = localize(torch.Tensor(dataset.size))
   for i = 1, dataset.size do
@@ -268,7 +266,7 @@ function trim(s)
   return (s:gsub("^%s*(.-)%s*$", "%1"))
 end
 
-function CharCNNLSTMSim:tok2vec(token)
+function CharCNNLSTMSim_tok:tok2vec(token)
 
   local s = token:lower()
   
@@ -279,10 +277,10 @@ function CharCNNLSTMSim:tok2vec(token)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return localize(t)
+  return localize(t:transpose(1,2))
 end
 
-function CharCNNLSTMSim:save(path)
+function CharCNNLSTMSim_tok:save(path)
   local config = {
     sim_nhidden = self.sim_nhidden
   }
@@ -294,9 +292,9 @@ function CharCNNLSTMSim:save(path)
 
 end
 
-function CharCNNLSTMSim.load(path)
+function CharCNNLSTMSim_tok.load(path)
   local state = torch.load(path)
-  local model = CharCNNLSTMSim.new(state.config)
+  local model = CharCNNLSTMSim_tok.new(state.config)
   model.params:copy(state.params)
   return model
 end
