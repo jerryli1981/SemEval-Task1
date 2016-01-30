@@ -10,16 +10,21 @@ function CharCNNLSTMSim_tok:__init(config)
   self.num_layers    = config.num_layers    or 1
 
   self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+
   self.dict = {}
   for i = 1,#self.alphabet do
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.tok_length = 16
+  self.char_vocab_size = #self.alphabet+1
+
+  self.inputFrameSize = 200
+
+  self.tok_length = 8
 
   self.outputFrameSize = 200
 
-  self.reshape_dim = 2 * self.outputFrameSize
+  self.reshape_dim = 1 * self.outputFrameSize
 
   self.emb_dim  = self.reshape_dim
 
@@ -27,10 +32,7 @@ function CharCNNLSTMSim_tok:__init(config)
 
   self.num_classes = 5
 
-  self.inputFrameSize = #self.alphabet
-
-  self.kw = 2
-  self.dw = 1
+  self.kw = 3
   self.kw2 = 2
 
   self.pool_kw = 2
@@ -73,16 +75,16 @@ function CharCNNLSTMSim_tok:new_cnn_module()
   local input = nn.Identity()()
 
   local vec = nn.Reshape(self.reshape_dim)(
-        nn.Threshold()(
-        nn.TemporalConvolution(self.outputFrameSize,self.outputFrameSize,self.kw2, self.dw)(
 
         nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
         nn.Threshold()(
-        nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw)(
+        nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(
 
         nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
         nn.Threshold()(
-        nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(input)))))))))
+        nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(
+
+        nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(input))))))))
 
   local vecs_to_input = nn.gModule({input}, {vec})
 
@@ -156,16 +158,17 @@ function CharCNNLSTMSim_tok:train(dataset)
         local linputs = {}
         for k = 1, #lsent do
           tok = lsent[k]
-          tok_vec = self:tok2vec(tok)
+          tok_vec = self:tok2characterIdx(tok)
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(linputs, tok_cnn_output)
         end
+
         linputs = localize(nn.Reshape(#lsent, self.reshape_dim):forward(nn.JoinTable(1):forward(linputs)))
        
         local rinputs = {}
         for k = 1, #rsent do
           tok = rsent[k]
-          tok_vec = self:tok2vec(tok)
+          tok_vec = self:tok2characterIdx(tok)
           tok_cnn_output = self.tok_CNN:forward(tok_vec)
           table.insert(rinputs, tok_cnn_output)
         end
@@ -239,7 +242,7 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
   local linputs = {}
   for k = 1, #lsent do
     tok = lsent[k]
-    local tok_vec = self:tok2vec(tok)
+    local tok_vec = self:tok2characterIdx(tok)
     tok_cnn_output = self.tok_CNN:forward(tok_vec)
     table.insert(linputs, tok_cnn_output)
   end
@@ -249,7 +252,7 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
   local rinputs = {}
   for k = 1, #rsent do
     tok = rsent[k]
-    local tok_vec = self:tok2vec(tok)
+    local tok_vec = self:tok2characterIdx(tok)
     tok_cnn_output = self.tok_CNN:forward(tok_vec)
     table.insert(rinputs, tok_cnn_output)
   end
@@ -283,6 +286,21 @@ end
 
 function trim(s)
   return (s:gsub("^%s*(.-)%s*$", "%1"))
+end
+
+function CharCNNLSTMSim_tok:tok2characterIdx(token)
+
+  local s = token:lower()
+  local output = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+  for i = #s, math.max(#s - self.tok_length + 1, 1), -1 do
+    c = s:sub(i,i)
+    if self.dict[c] then
+      output[#s-i+1] = self.dict[c]
+    else
+      output[#s-i+1] = #self.alphabet+1
+    end
+  end
+  return output
 end
 
 function CharCNNLSTMSim_tok:tok2vec(token)
