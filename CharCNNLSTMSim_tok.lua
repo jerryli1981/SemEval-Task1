@@ -15,17 +15,26 @@ function CharCNNLSTMSim_tok:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.tok_length = 5
+  self.tok_length = 12
 
-  self.outputFrameSize = 100
+  self.outputFrameSize = 200
 
-  self.reshape_dim = 3 * self.outputFrameSize
+  self.reshape_dim = 1 * self.outputFrameSize
 
   self.emb_dim  = self.reshape_dim
 
   self.mem_dim = 100
 
   self.num_classes = 5
+
+  self.inputFrameSize = #self.alphabet
+
+  self.kw = 2
+  self.dw = 1
+  self.kw2 = 2
+
+  self.pool_kw = 2
+  self.pool_dw = 2
 
   -- optimizer configuration
  -- self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
@@ -39,15 +48,9 @@ function CharCNNLSTMSim_tok:__init(config)
     num_layers = self.num_layers,
   }
 
-  -- initialize cnn model
-  local cnn_config = {
-    seq_length = self.tok_length,
-    inputFrameSize = #self.alphabet,
-    outputFrameSize = self.outputFrameSize,
-    reshape_dim = self.reshape_dim
-  }
 
-  self.tok_CNN = CharCNN(cnn_config)
+  self.tok_CNN = self:new_cnn_module()
+
   self.llstm = LSTM(lstm_config)
   self.rlstm = LSTM(lstm_config)
 
@@ -62,6 +65,28 @@ function CharCNNLSTMSim_tok:__init(config)
 
   share_params(self.tok_CNN, self.tok_CNN)
   share_params(self.rlstm, self.llstm)
+
+end
+
+function CharCNNLSTMSim_tok:new_cnn_module()
+
+  local input = nn.Identity()()
+
+  local vec = 
+        nn.Threshold()(
+        nn.TemporalConvolution(self.outputFrameSize,self.outputFrameSize,self.kw2, self.dw)(
+
+        nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2, self.dw)(
+
+        nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+        nn.Threshold()(
+        nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(input))))))))
+
+  local vecs_to_input = nn.gModule({input}, {vec})
+
+  return localize(vecs_to_input)
 
 end
 
@@ -165,6 +190,7 @@ function CharCNNLSTMSim_tok:train(dataset)
 
       -- regularization
       loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+      self.grad_params:add(self.reg, self.params)
 
       avgloss = avgloss + loss
       return loss, self.grad_params
@@ -212,7 +238,6 @@ end
 -- Predict the similarity of a sentence pair.
 function CharCNNLSTMSim_tok:predict(lsent, rsent)
 
-  self.tok_CNN:evaluate()
   self.llstm:evaluate()
   self.rlstm:evaluate()
 
@@ -241,7 +266,6 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
   
   local output = self.sim_module:forward(inputs)
 
-  self.tok_CNN:forget()
   self.llstm:forget()
   self.rlstm:forget()
 
