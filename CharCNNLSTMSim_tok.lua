@@ -2,7 +2,7 @@ local CharCNNLSTMSim_tok = torch.class('CharCNNLSTMSim_tok')
 
 function CharCNNLSTMSim_tok:__init(config)
 
-  self.learning_rate = config.learning_rate or 0.05
+  self.learning_rate = config.learning_rate or 0.001
   self.batch_size    = config.batch_size    or 25
   self.sim_nhidden   = config.sim_nhidden   or 50
   self.reg           = config.reg           or 1e-4
@@ -26,15 +26,13 @@ function CharCNNLSTMSim_tok:__init(config)
 
   self.outputFrameSize = 200
 
-  self.reshape_dim = 1 * self.outputFrameSize
-
-  self.emb_dim  = self.reshape_dim
+  self.emb_dim  = 3 * self.outputFrameSize
 
   self.mem_dim = 100
 
   self.num_classes = 5
 
-  self.kw = 3
+  self.kw = 2
   self.kw2 = 2
 
   self.pool_kw = 2
@@ -52,83 +50,59 @@ function CharCNNLSTMSim_tok:__init(config)
     num_layers = self.num_layers,
   }
 
-
-  self.tok_CNN = self:new_cnn_module()
-
-  self.llstm = LSTM(lstm_config)
-  self.rlstm = LSTM(lstm_config)
-
+  
   self.sim_module = self:new_sim_module()
 
-  local modules = nn.Parallel()
-    :add(self.tok_CNN)
-    :add(llstm)
-    :add(self.sim_module)
-  
-  self.params, self.grad_params = modules:getParameters()
+  self.params, self.grad_params = self.sim_module:getParameters()
 
-  share_params(self.tok_CNN, self.tok_CNN)
-  share_params(self.rlstm, self.llstm)
-
-end
-
-function CharCNNLSTMSim_tok:new_cnn_module()
-
-  local inputs = {}
-
-  local concat = {}
-
-  for l = 1, self.max_sent_length do
-
-    local tok = nn.Identity()()
-    table.insert(inputs, tok)
-
-    local cnn_out = nn.Reshape(self.reshape_dim)(
-
-          nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
-          nn.Threshold()(
-          nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(
-
-          nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
-          nn.Threshold()(
-          nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(
-
-          nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(tok))))))))
-
-    table.insert(concat, cnn_out)
-
-  end
-
-  output = nn.Reshape(self.max_sent_length, self.reshape_dim)(nn.JoinTable(1)(concat))
-
-  return nn.gModule(inputs, {output})
+  share_params(self.sim_module, self.sim_module)
 
 end
 
 function CharCNNLSTMSim_tok:new_sim_module()
-  print('Using charCNNLSTMSim tok module')
-  local vecs_to_input
-  local lvec, rvec = nn.Identity()(), nn.Identity()()
-  
+
+  local inputs = {}
+
+  local lvec = nn.Identity()()
+  local rvec = nn.Identity()()
+
+  table.insert(inputs, lvec)
+  table.insert(inputs, rvec)
+
+  local outputs = {}
+  for l = 1, 2*self.max_sent_length do
+
+    local tok = nn.Identity()()
+    table.insert(inputs, tok)
+
+    local cnn_out = nn.Reshape(self.emb_dim)(
+                    nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+                    nn.Tanh()(
+                    nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(
+                    nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(tok)))))
+
+    if l <= self.max_sent_length then
+      lvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({lvec, cnn_out}) ) )
+    else
+      rvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({rvec, cnn_out}) ) )
+    end
+  end
+
   local mult_dist = nn.CMulTable(){lvec, rvec}
   local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-  local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  local vecs_to_input = nn.gModule({lvec, rvec}, {vec_dist_feats})
 
-   -- define similarity model architecture
-  local sim_module = nn.Sequential()
-    :add(vecs_to_input)
-    :add(nn.Linear(self.mem_dim*2, self.sim_nhidden))
-    :add(nn.Sigmoid())   -- does better than tanh
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
-    :add(nn.LogSoftMax())
-  return localize(sim_module)
+  local probs = nn.LogSoftMax()(
+                nn.Linear(self.sim_nhidden, self.num_classes)(
+                nn.Sigmoid()(
+                nn.Linear(self.mem_dim*2, self.sim_nhidden)(
+                nn.JoinTable(1){mult_dist, add_dist}))))
+
+  return localize(nn.gModule(inputs, {probs}))
+
 end
 
 function CharCNNLSTMSim_tok:train(dataset)
 
-  self.llstm:training()
-  self.rlstm:training()
 
   local indices = localize(torch.randperm(dataset.size))
   local avgloss = 0.
@@ -167,56 +141,55 @@ function CharCNNLSTMSim_tok:train(dataset)
         local idx = indices[i + j - 1]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
 
-        local linputs = {}
+        local inputs = {}
+
+        local lvec = localize(torch.zeros(self.mem_dim))
+        local rvec = localize(torch.zeros(self.mem_dim))
+
+        table.insert(inputs, lvec)
+        table.insert(inputs, rvec)
+
 
         for k = 1, self.max_sent_length do
           if k <= #lsent then
             tok = lsent[k]
             tok_vec = self:tok2characterIdx(tok)
-            table.insert(linputs, tok_vec)
+            table.insert(inputs, tok_vec)
           else
             tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-            table.insert(linputs, tok_vec)
+            table.insert(inputs, tok_vec)
           end
         end
 
-        l_rep = self.tok_CNN:forward(linputs)
-
-       
-        local rinputs = {}
         for k = 1, self.max_sent_length do
           if k <= #rsent then
             tok = rsent[k]
             tok_vec = self:tok2characterIdx(tok)
-            table.insert(rinputs, tok_vec)
+            table.insert(inputs, tok_vec)
           else
             tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-            table.insert(rinputs, tok_vec)
+            table.insert(inputs, tok_vec)
           end
         end
-
-        r_rep = self.tok_CNN:forward(rinputs)
-
-        inputs = {self.llstm:forward(l_rep), self.rlstm:forward(r_rep)}
 
         local output = self.sim_module:forward(inputs)
 
         local example_loss = self.criterion:forward(output, targets[j])
+        --print(example_loss)
         loss = loss + example_loss
+        --print(loss)
 
         local sim_grad = self.criterion:backward(output, targets[j])
 
-        local rep_grad = self.sim_module:backward(inputs, sim_grad)
-
-        self:LSTM_CNN_backward(linputs, rinputs, l_rep, r_rep, rep_grad)
+        self.sim_module:backward(inputs, sim_grad)
 
       end
       loss = loss / batch_size
       self.grad_params:div(batch_size)
 
       -- regularization
-      loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
-      self.grad_params:add(self.reg, self.params)
+      --loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+      --self.grad_params:add(self.reg, self.params)
 
       avgloss = avgloss + loss
       return loss, self.grad_params
@@ -245,45 +218,38 @@ end
 -- Predict the similarity of a sentence pair.
 function CharCNNLSTMSim_tok:predict(lsent, rsent)
 
-  self.llstm:evaluate()
-  self.rlstm:evaluate()
+  local inputs = {}
 
-  local linputs = {}
+  local lvec = torch.zeros(self.mem_dim)
+  local rvec = torch.zeros(self.mem_dim)
+
+  table.insert(inputs, lvec)
+  table.insert(inputs, rvec)
+
 
   for k = 1, self.max_sent_length do
     if k <= #lsent then
       tok = lsent[k]
       tok_vec = self:tok2characterIdx(tok)
-      table.insert(linputs, tok_vec)
+      table.insert(inputs, tok_vec)
     else
       tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-      table.insert(linputs, tok_vec)
+      table.insert(inputs, tok_vec)
     end
   end
 
-  l_rep = self.tok_CNN:forward(linputs)
-
- 
-  local rinputs = {}
   for k = 1, self.max_sent_length do
     if k <= #rsent then
       tok = rsent[k]
       tok_vec = self:tok2characterIdx(tok)
-      table.insert(rinputs, tok_vec)
+      table.insert(inputs, tok_vec)
     else
       tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-      table.insert(rinputs, tok_vec)
+      table.insert(inputs, tok_vec)
     end
   end
 
-  r_rep = self.tok_CNN:forward(rinputs)
-
-  inputs = {self.llstm:forward(l_rep), self.rlstm:forward(r_rep)}
-
   local output = self.sim_module:forward(inputs)
-
-  self.llstm:forget()
-  self.rlstm:forget()
 
   return localize(torch.range(1,5)):dot(output:exp())
 
@@ -318,7 +284,7 @@ function CharCNNLSTMSim_tok:tok2characterIdx(token)
       output[#s-i+1] = #self.alphabet+1
     end
   end
-  return output
+  return localize(output)
 end
 
 function CharCNNLSTMSim_tok:tok2vec(token)
