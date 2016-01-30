@@ -2,7 +2,7 @@ local CharCNNLSTMSim_tok = torch.class('CharCNNLSTMSim_tok')
 
 function CharCNNLSTMSim_tok:__init(config)
 
-  self.learning_rate = config.learning_rate or 0.05
+  self.learning_rate = config.learning_rate or 0.001
   self.batch_size    = config.batch_size    or 25
   self.sim_nhidden   = config.sim_nhidden   or 50
   self.reg           = config.reg           or 1e-4
@@ -15,11 +15,11 @@ function CharCNNLSTMSim_tok:__init(config)
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.tok_length = 12
+  self.tok_length = 16
 
   self.outputFrameSize = 200
 
-  self.reshape_dim = 1 * self.outputFrameSize
+  self.reshape_dim = 2 * self.outputFrameSize
 
   self.emb_dim  = self.reshape_dim
 
@@ -37,8 +37,8 @@ function CharCNNLSTMSim_tok:__init(config)
   self.pool_dw = 2
 
   -- optimizer configuration
- -- self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
-  self.optim_state = { learningRate = self.learning_rate }
+  self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
+  --self.optim_state = { learningRate = self.learning_rate }
 
   self.criterion = localize(nn.DistKLDivCriterion())
 
@@ -72,7 +72,7 @@ function CharCNNLSTMSim_tok:new_cnn_module()
 
   local input = nn.Identity()()
 
-  local vec = 
+  local vec = nn.Reshape(self.reshape_dim)(
         nn.Threshold()(
         nn.TemporalConvolution(self.outputFrameSize,self.outputFrameSize,self.kw2, self.dw)(
 
@@ -82,7 +82,7 @@ function CharCNNLSTMSim_tok:new_cnn_module()
 
         nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
         nn.Threshold()(
-        nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(input))))))))
+        nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(input)))))))))
 
   local vecs_to_input = nn.gModule({input}, {vec})
 
@@ -195,7 +195,7 @@ function CharCNNLSTMSim_tok:train(dataset)
       avgloss = avgloss + loss
       return loss, self.grad_params
     end
-    optim.adagrad(feval, self.params, self.optim_state)
+    optim.sgd(feval, self.params, self.optim_state)
     avgloss = avgloss/N
   end
   xlua.progress(dataset.size, dataset.size)
