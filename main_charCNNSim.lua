@@ -79,7 +79,6 @@ if args.structure == "merge" then
 elseif args.structure == "cnn" then
   print("Using pure cnn")
   model_class = CharCNNSim
-
 elseif args.structure == "cnnlstm" then
   model_class = CharCNNLSTMSim
 elseif args.structure == "lstm" then

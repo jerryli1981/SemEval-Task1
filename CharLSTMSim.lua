@@ -9,17 +9,18 @@ function CharLSTMSim:__init(config)
 
   self.num_layers    = config.num_layers    or 1
 
-  self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
+  --self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
+  self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
   self.dict = {}
   for i = 1,#self.alphabet do
     self.dict[self.alphabet:sub(i,i)] = i
   end
 
-  self.length = 100
+  self.length = 115
 
   self.emb_dim  = #self.alphabet
 
-  self.mem_dim = 100
+  self.mem_dim = 50
 
   self.num_classes = 5
 
@@ -112,9 +113,7 @@ function CharLSTMSim:train(dataset)
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
 
         local linputs = self:seq2vec(lsent)
-        linputs = linputs:transpose(1,2):contiguous()
         local rinputs = self:seq2vec(rsent)
-        rinputs = rinputs:transpose(1,2):contiguous()
 
         inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
 
@@ -127,15 +126,24 @@ function CharLSTMSim:train(dataset)
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-        self.llstm:backward(linputs, rep_grad[1])
-        self.rlstm:backward(rinputs, rep_grad[2])
+        --self.LSTM_backward(linputs, rinputs, rep_grad)
 
+        local lgrad = localize(torch.zeros(self.length, self.mem_dim))
+        local rgrad = localize(torch.zeros(self.length, self.mem_dim))
+
+        lgrad[self.length] = rep_grad[1]
+        rgrad[self.length] = rep_grad[2]
+        
+        self.llstm:backward(linputs, lgrad)
+        self.rlstm:backward(rinputs, rgrad)
+              
       end
       loss = loss / batch_size
       self.grad_params:div(batch_size)
 
       -- regularization
       loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+      self.grad_params:add(self.reg, self.params)
 
       avgloss = avgloss + loss
       return loss, self.grad_params
@@ -154,9 +162,7 @@ function CharLSTMSim:predict(lsent, rsent)
   self.rlstm:evaluate()
 
   local linputs = self:seq2vec(lsent)
-  linputs = linputs:transpose(1,2):contiguous()
   local rinputs = self:seq2vec(rsent)
-  rinputs = rinputs:transpose(1,2):contiguous()
 
   inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
 
@@ -193,9 +199,10 @@ function CharLSTMSim:seq2vec(sequence)
   for i=1, #sequence do
     s = s .. sequence[i] .. " "
   end
+  s = s:gsub("%s+", "")
   s = trim(s)
+
   local s = s:lower()
-  
   local t = torch.Tensor(#self.alphabet, self.length)
   t:zero()
   for i = #s, math.max(#s - self.length + 1, 1), -1 do
@@ -203,7 +210,7 @@ function CharLSTMSim:seq2vec(sequence)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return localize(t)
+  return localize(t:transpose(1,2))
 end
 
 function CharLSTMSim:save(path)
