@@ -2,11 +2,12 @@ local CharCNNSim = torch.class('CharCNNSim')
 
 function CharCNNSim:__init(config)
 
-  self.learning_rate = config.learning_rate or 0.05
-  self.batch_size    = config.batch_size    or 128
+  self.learning_rate = config.learning_rate or 0.5
+  self.batch_size    = config.batch_size    or 25
   self.sim_nhidden   = config.sim_nhidden   or 50
 
-  self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
+  --self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:'\"/\\|_@#$%^&*~`+-=<>()[]{}"
+  self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
   self.dict = {}
   for i = 1,#self.alphabet do
     self.dict[self.alphabet:sub(i,i)] = i
@@ -65,6 +66,7 @@ function CharCNNSim:new_sim_module()
         nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(linput))))))))))
 
   local rvec = nn.Linear(self.reshape_dim, 512)(
+       
         nn.Reshape(self.reshape_dim)(
         nn.Threshold()(
         nn.TemporalConvolution(self.outputFrameSize,self.outputFrameSize,self.kw2, self.dw2)(
@@ -78,15 +80,15 @@ function CharCNNSim:new_sim_module()
         nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw, self.dw)(rinput))))))))))
 
   --local mult_dist = nn.CMulTable(){lvec, rvec}
-  --local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
+  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
   --local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
-  local vec_dist_feats = nn.JoinTable(1){lvec, rvec}
+  --local vec_dist_feats = nn.JoinTable(1){lvec, rvec}
 
-  local vecs_to_input = nn.gModule({linput, rinput}, {vec_dist_feats})
+  local vecs_to_input = nn.gModule({linput, rinput}, {add_dist})
 
   local sim_module = nn.Sequential()
     :add(vecs_to_input)
-    :add(nn.Linear(512*2, self.num_classes))
+    :add(nn.Linear(512, self.num_classes))
     --:add(nn.Tanh())   -- does better than tanh
     --:add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
