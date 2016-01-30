@@ -22,6 +22,10 @@ include('CharCNNLSTMSim_seq.lua')
 include('CharLSTMSim.lua')
 include('CharCNNSim.lua')
 
+include('CharCNN.lua')
+
+
+
 HighwayMLP = require 'HighwayMLP'
 
 printf = utils.printf
