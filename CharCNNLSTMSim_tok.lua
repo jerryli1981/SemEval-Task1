@@ -211,27 +211,22 @@ function CharCNNLSTMSim_tok:LSTM_CNN_backward(lsent, rsent, linputs, rinputs, re
   rgrad[#rsent] = rep_grad[2]
   left = self.llstm:backward(linputs, lgrad)
 
-  --[[
   for k = 1, #lsent do
     tok = lsent[k]
     tok_vec = self:tok2vec(tok)
-    tok_vec = tok_vec:transpose(1,2):contiguous()
     vec = nn.NarrowTable(k):forward(left)[1]
     self.tok_CNN:backward(tok_vec, vec)
+    
   end
-  --]]
-
+  
   right = self.rlstm:backward(rinputs, rgrad)
 
-  --[[
   for k = 1, #rsent do
     tok = rsent[k]
     tok_vec = self:tok2vec(tok)
-    tok_vec = tok_vec:transpose(1,2):contiguous()
     vec = nn.NarrowTable(k):forward(right)[1]
     self.tok_CNN:backward(tok_vec, vec)
   end
-  --]]
   
 end
 
