@@ -22,11 +22,11 @@ function CharCNNLSTMSim_tok:__init(config)
 
   self.max_sent_length = 10
 
-  self.tok_length = 8
+  self.tok_length = 12
 
   self.outputFrameSize = 200
 
-  self.emb_dim  = 3 * self.outputFrameSize
+  self.emb_dim  = 2 * self.outputFrameSize
 
   self.mem_dim = 100
 
@@ -76,10 +76,15 @@ function CharCNNLSTMSim_tok:new_sim_module()
     table.insert(inputs, tok)
 
     local cnn_out = nn.Reshape(self.emb_dim)(
+
                     nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
-                    nn.Tanh()(
+                    nn.Threshold()(
+                    nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(
+
+                    nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
+                    nn.Threshold()(
                     nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(
-                    nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(tok)))))
+                    nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(tok))))))))
 
     if l <= self.max_sent_length then
       lvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({lvec, cnn_out}) ) )
