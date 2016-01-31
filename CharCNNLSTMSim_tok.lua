@@ -2,7 +2,7 @@ local CharCNNLSTMSim_tok = torch.class('CharCNNLSTMSim_tok')
 
 function CharCNNLSTMSim_tok:__init(config)
 
-  self.learning_rate = config.learning_rate or 0.001
+  self.learning_rate = config.learning_rate or 0.01
   self.batch_size    = config.batch_size    or 25
   self.sim_nhidden   = config.sim_nhidden   or 50
   self.reg           = config.reg           or 1e-4
@@ -59,15 +59,53 @@ function CharCNNLSTMSim_tok:__init(config)
 
 end
 
+function addUnit(prev_h, prev_c, x, inputSize, hiddenSize)
+
+  -- Input gate. Equation (7)
+  i_gate = nn.Sigmoid()(nn.CAddTable()({
+    nn.Linear(inputSize,hiddenSize)(x),
+    nn.Linear(hiddenSize,hiddenSize)(prev_h),
+    nn.Linear(hiddenSize,hiddenSize)(prev_c)
+  }))
+  -- Forget gate. Equation (8)
+  f_gate = nn.Sigmoid()(nn.CAddTable()({
+    nn.Linear(inputSize,hiddenSize)(x),
+    nn.Linear(hiddenSize,hiddenSize)(prev_h),
+    nn.Linear(hiddenSize,hiddenSize)(prev_c)
+  }))
+  -- New contribution to c. Right term in equation (9)
+  learning = nn.Tanh()(nn.CAddTable()({
+    nn.Linear(inputSize,hiddenSize)(x),
+    nn.Linear(hiddenSize,hiddenSize)(prev_h)
+  }))
+  -- Memory cell. Equation (9)
+  c = nn.CAddTable()({
+    nn.CMulTable()({f_gate, prev_c}),
+    nn.CMulTable()({i_gate, learning})
+  })
+  -- Output gate. Equation (10)
+  o_gate = nn.Sigmoid()(nn.CAddTable()({
+    nn.Linear(inputSize,hiddenSize)(x),
+    nn.Linear(hiddenSize,hiddenSize)(prev_h),
+    nn.Linear(hiddenSize,hiddenSize)(c)
+  }))
+  -- Updated hidden state. Equation (11)
+  h = nn.CMulTable()({o_gate, nn.Tanh()(c)})
+  return h, c
+end
+
 function CharCNNLSTMSim_tok:new_sim_module()
 
   local inputs = {}
 
-  local lvec = nn.Identity()()
-  local rvec = nn.Identity()()
+  local l_prev_h, l_prev_c = nn.Identity()(),nn.Identity()()
+  local r_prev_h, r_prev_c = nn.Identity()(),nn.Identity()()
 
-  table.insert(inputs, lvec)
-  table.insert(inputs, rvec)
+  table.insert(inputs, l_prev_h)
+  table.insert(inputs, r_prev_h)
+
+  table.insert(inputs, l_prev_c)
+  table.insert(inputs, r_prev_c)
 
   local outputs = {}
   for l = 1, 2*self.max_sent_length do
@@ -87,14 +125,16 @@ function CharCNNLSTMSim_tok:new_sim_module()
                     nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(tok))))))))
 
     if l <= self.max_sent_length then
-      lvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({lvec, cnn_out}) ) )
+      --lvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({lvec, cnn_out}) ) )
+      l_prev_h, l_prev_c = addUnit(l_prev_h, l_prev_c, cnn_out, self.emb_dim, self.mem_dim)
     else
-      rvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({rvec, cnn_out}) ) )
+      --rvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({rvec, cnn_out}) ) )
+      r_prev_h, r_prev_c = addUnit(r_prev_h, r_prev_c, cnn_out, self.emb_dim, self.mem_dim)
     end
   end
 
-  local mult_dist = nn.CMulTable(){lvec, rvec}
-  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
+  local mult_dist = nn.CMulTable(){l_prev_h, r_prev_h}
+  local add_dist = nn.Abs()(nn.CSubTable(){l_prev_h, r_prev_h})
 
   local probs = nn.LogSoftMax()(
                 nn.Linear(self.sim_nhidden, self.num_classes)(
@@ -154,6 +194,11 @@ function CharCNNLSTMSim_tok:train(dataset)
         table.insert(inputs, lvec)
         table.insert(inputs, rvec)
 
+        local lc = localize(torch.zeros(self.mem_dim))
+        local rc = localize(torch.zeros(self.mem_dim))
+
+        table.insert(inputs, lc)
+        table.insert(inputs, rc)
 
         for k = 1, self.max_sent_length do
           if k <= #lsent then
@@ -180,9 +225,7 @@ function CharCNNLSTMSim_tok:train(dataset)
         local output = self.sim_module:forward(inputs)
 
         local example_loss = self.criterion:forward(output, targets[j])
-        --print(example_loss)
         loss = loss + example_loss
-        --print(loss)
 
         local sim_grad = self.criterion:backward(output, targets[j])
 
@@ -193,8 +236,8 @@ function CharCNNLSTMSim_tok:train(dataset)
       self.grad_params:div(batch_size)
 
       -- regularization
-      --loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
-      --self.grad_params:add(self.reg, self.params)
+      loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+      self.grad_params:add(self.reg, self.params)
 
       avgloss = avgloss + loss
       return loss, self.grad_params
@@ -204,20 +247,6 @@ function CharCNNLSTMSim_tok:train(dataset)
   end
   xlua.progress(dataset.size, dataset.size)
   return avgloss
-end
-
--- LSTM CNN backward propagation
-function CharCNNLSTMSim_tok:LSTM_CNN_backward(linputs, rinputs, l_rep, r_rep, rep_grad)
-  local lgrad, rgrad
-  lgrad = localize(torch.zeros(self.max_sent_length, self.mem_dim))
-  rgrad = localize(torch.zeros(self.max_sent_length, self.mem_dim))
-  lgrad[self.max_sent_length] = rep_grad[1]
-  rgrad[self.max_sent_length] = rep_grad[2]
-  left = self.llstm:backward(l_rep, lgrad)
-  right = self.rlstm:backward(r_rep, rgrad)
-  self.tok_CNN:backward(linputs, left)
-  self.tok_CNN:backward(rinputs, right)
-
 end
 
 -- Predict the similarity of a sentence pair.
