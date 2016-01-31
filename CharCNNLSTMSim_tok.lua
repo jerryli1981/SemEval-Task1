@@ -18,25 +18,29 @@ function CharCNNLSTMSim_tok:__init(config)
 
   self.char_vocab_size = #self.alphabet+1
 
-  self.inputFrameSize = 200
+  --if tok2char
+  --self.inputFrameSize = 50
+
+  --if tok2vec
+  self.inputFrameSize = #self.alphabet
 
   self.max_sent_length = 10
 
   self.tok_length = 12
 
-  self.outputFrameSize = 200
+  self.outputFrameSize = 100
 
-  self.emb_dim  = 2 * self.outputFrameSize
+  self.emb_dim  = (self.outputFrameSize * 3)
 
   self.mem_dim = 100
 
   self.num_classes = 5
 
-  self.kw = 2
-  self.kw2 = 2
+  self.kw = 3
+  self.kw2 = 3
 
   self.pool_kw = 2
-  self.pool_dw = 2
+  self.pool_dw = 1
 
   -- optimizer configuration
   --self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
@@ -44,13 +48,6 @@ function CharCNNLSTMSim_tok:__init(config)
 
   self.criterion = localize(nn.DistKLDivCriterion())
 
-  local lstm_config = {
-    in_dim = self.emb_dim,
-    mem_dim = self.mem_dim,
-    num_layers = self.num_layers,
-  }
-
-  
   self.sim_module = self:new_sim_module()
 
   self.params, self.grad_params = self.sim_module:getParameters()
@@ -61,9 +58,10 @@ end
 
 function addCNNUnit(self, x)
 
-  lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
 
-  conv_layer_1 = nn.Threshold()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
+  --lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
+
+  conv_layer_1 = nn.Threshold()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(x))
 
   pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
 
@@ -71,9 +69,11 @@ function addCNNUnit(self, x)
 
   pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
 
-  reshape_layer = nn.Reshape(self.emb_dim)(pool_layer_2)
+  conv_layer_3 = nn.Threshold()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
 
-  return reshape_layer
+  conv_layer_4 = nn.Threshold()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
+
+  return nn.Reshape(self.emb_dim)(conv_layer_4)
 
 end
 
@@ -125,13 +125,13 @@ function CharCNNLSTMSim_tok:new_sim_module()
   table.insert(inputs, l_prev_c)
   table.insert(inputs, r_prev_c)
 
-  local outputs = {}
   for l = 1, 2*self.max_sent_length do
 
     local tok = nn.Identity()()
     table.insert(inputs, tok)
 
     local cnn_out = addCNNUnit(self, tok)
+
 
     if l <= self.max_sent_length then
       --lvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({lvec, cnn_out}) ) )
@@ -212,10 +212,12 @@ function CharCNNLSTMSim_tok:train(dataset)
         for k = 1, self.max_sent_length do
           if k <= #lsent then
             tok = lsent[k]
-            tok_vec = self:tok2characterIdx(tok)
+            --tok_vec = self:tok2characterIdx(tok)
+            tok_vec = self:tok2vec(tok)
             table.insert(inputs, tok_vec)
           else
-            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            tok_vec = torch.zeros(self.tok_length, #self.alphabet)
             table.insert(inputs, tok_vec)
           end
         end
@@ -223,10 +225,12 @@ function CharCNNLSTMSim_tok:train(dataset)
         for k = 1, self.max_sent_length do
           if k <= #rsent then
             tok = rsent[k]
-            tok_vec = self:tok2characterIdx(tok)
+            --tok_vec = self:tok2characterIdx(tok)
+            tok_vec = self:tok2vec(tok)
             table.insert(inputs, tok_vec)
           else
-            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            tok_vec = torch.zeros(self.tok_length, #self.alphabet)
             table.insert(inputs, tok_vec)
           end
         end
@@ -278,7 +282,8 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
   for k = 1, self.max_sent_length do
     if k <= #lsent then
       tok = lsent[k]
-      tok_vec = self:tok2characterIdx(tok)
+      --tok_vec = self:tok2characterIdx(tok)
+      tok_vec = self:tok2vec(tok)
       table.insert(inputs, tok_vec)
     else
       tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
@@ -289,7 +294,8 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
   for k = 1, self.max_sent_length do
     if k <= #rsent then
       tok = rsent[k]
-      tok_vec = self:tok2characterIdx(tok)
+      --tok_vec = self:tok2characterIdx(tok)
+      tok_vec = self:tok2vec(tok)
       table.insert(inputs, tok_vec)
     else
       tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
@@ -346,7 +352,7 @@ function CharCNNLSTMSim_tok:tok2vec(token)
       t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
     end
   end
-  return localize(t:transpose(1,2))
+  return localize(t:transpose(1,2):contiguous())
 end
 
 function CharCNNLSTMSim_tok:save(path)
