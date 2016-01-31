@@ -46,6 +46,9 @@ function read_dataset(dir, vocab)
   local dataset = {}
   dataset.vocab = vocab
 
+  dataset.lsents_S = read_charsequence(dir .. 'a.toks')
+  dataset.rsents_S = read_charsequence(dir .. 'b.toks')
+
   dataset.lsents = read_sentences(dir .. 'a.toks', vocab)
   dataset.rsents = read_sentences(dir .. 'b.toks', vocab)
   dataset.size = #dataset.lsents
@@ -71,6 +74,9 @@ function read_dataset_char(dir)
 
   local entlabmap = {NEUTRAL=3, CONTRADICTION=1, ENTAILMENT=2}
   local dataset = {}
+
+  dataset.lsents_S = read_sentences(dir .. 'a.toks', vocab)
+  dataset.rsents_S = read_sentences(dir .. 'b.toks', vocab)
 
   dataset.lsents = read_charsequence(dir .. 'a.toks')
   dataset.rsents = read_charsequence(dir .. 'b.toks')

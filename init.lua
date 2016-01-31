@@ -24,6 +24,8 @@ include('CharCNNSim.lua')
 
 include('CharCNN.lua')
 
+include('LSTMSimX.lua')
+
 
 
 HighwayMLP = require 'HighwayMLP'

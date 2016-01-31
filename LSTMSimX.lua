@@ -1,6 +1,6 @@
-local LSTMSim = torch.class('LSTMSim')
+local LSTMSimX = torch.class('LSTMSimX')
 
-function LSTMSim:__init(config)
+function LSTMSimX:__init(config)
   self.mem_dim       = config.mem_dim       or 150
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -8,6 +8,41 @@ function LSTMSim:__init(config)
   self.sim_nhidden   = config.sim_nhidden   or 50
   self.structure     = config.structure     or 'lstm'
   self.num_layers    = config.num_layers    or 1
+
+  self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+  self.dict = {}
+  for i = 1,#self.alphabet do
+    self.dict[self.alphabet:sub(i,i)] = i
+  end
+
+  self.char_vocab_size = #self.alphabet+1
+
+  --if tok2char
+  --self.inputFrameSize = 50
+
+  --if tok2vec
+  self.inputFrameSize = #self.alphabet
+
+  self.max_sent_length = 37
+
+  self.tok_length = 12
+
+  self.outputFrameSize = 100
+
+  self.emb_dim  = (self.outputFrameSize * 3)
+
+  self.mem_dim = 100
+
+  self.num_classes = 5
+
+  self.kw = 3
+  self.kw2 = 3
+
+  self.pool_kw = 2
+  self.pool_dw = 1
+
+
 
   -- word embedding
   self.emb_dim = config.emb_vecs:size(2)
@@ -19,6 +54,8 @@ function LSTMSim:__init(config)
   self.optim_state = { learningRate = self.learning_rate }
 
   self.criterion = nn.DistKLDivCriterion()
+
+  self.EMB = self:new_EMB_module()
 
   -- initialize lstm model
   local lstm_config = {
@@ -40,9 +77,10 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv1d()
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
+    :add(self.EMB)
     :add(self.llstm)
     :add(self.sim_module)
 
@@ -58,7 +96,7 @@ function LSTMSim:__init(config)
   end
 end
 
-function LSTMSim:new_sim_module()
+function LSTMSimX:new_sim_module()
   print('Using simple sim module')
   local lvec, rvec, inputs, input_dim
   if self.structure == 'lstm' then
@@ -101,174 +139,47 @@ function LSTMSim:new_sim_module()
   return sim_module
 end
 
-function LSTMSim:new_sim_module_conv1d_old()
-  print('Using conv1d sim module')
+function addCNNUnit(self, x)
 
-  local img_h = self.num_layers
-  local img_w = self.mem_dim 
 
-  local num_plate
-  local inputFrameSize
+  lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
 
-  if self.structure == 'lstm' then
-    local linput, rinput = nn.Identity()(), nn.Identity()()
+  conv_layer_1 = nn.Sigmoid()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
 
-    if self.num_layers == 1 then
-      lvec, rvec = linput, rinput
-    else
-      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
-    end
+  pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
 
-    local mult_dist = nn.CMulTable(){lvec, rvec}
-    local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-    
-    num_plate=2
+  conv_layer_2 = nn.Sigmoid()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
 
-    local out_mat = nn.Reshape(num_plate, img_h*img_w)(nn.JoinTable(1){mult_dist, add_dist})
+  pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
 
-    local inputs = {linput, rinput}
-    vecs_to_input = nn.gModule(inputs, {out_mat})
-    inputFrameSize = img_h*img_w
+  conv_layer_3 = nn.Sigmoid()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
 
-  elseif self.structure == 'bilstm' then
+  conv_layer_4 = nn.Sigmoid()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
 
-    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
-    if self.num_layers == 1 then
-      lvec = nn.JoinTable(1){lf, lb}
-      rvec = nn.JoinTable(1){rf, rb}
-    else
-      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
-      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
-    end
-    inputs = {lf, lb, rf, rb}
-
-    local mult_dist = nn.CMulTable(){lvec, rvec}
-    local abssub_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-    --local add_dist = nn.CAddTable(){lmat, rmat}
-    --local div_dist = nn.CDivTable(){lmat, rmat}
-    --local mean_dist = nn.Mean(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
-    --local max_dist = nn.Max(1)(nn.Reshape(2,self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))
-
-    --local relative_change = nn.MulConstant(0.01)(nn.CDivTable(){sub_dist, rmat})
-
-    --local relative_difference = nn.MulConstant(0.01)(nn.Abs()(nn.CDivTable(){abssub_dist, mean_dist}))
-
-    --local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
-        --(nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lmat, rmat}))))
-
-    --local sqr_dist = nn.Square()(nn.CSubTable(){lmat, rmat})
-    --local sqrt_dist = nn.Sqrt()(nn.CSubTable(){lmat, rmat})
-
-    inputFrameSize = img_h*img_w*2
-    num_plate=2
-    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist})
-
-    local inputs = {lf, lb, rf, rb}
-    vecs_to_input = nn.gModule(inputs, {out_mat})
-    
-  end
-
-  local outputFrameSize = inputFrameSize
-  local kw = 1
-  local dw = 1
-  local pool_kw = 1
-  local pool_dw = 1
-  local mlp_input_dim = (((num_plate-kw)/dw+1-pool_kw)/pool_dw+1) * outputFrameSize
-  local outputFrameSize2 = img_h*img_w
-  local kw2=1
-  local dw2=1
-  local pool_kw2 = 1
-  local pool_dw2 = 1
-  local mlp_input_dim2 = (((((num_plate-kw)/dw+1-pool_kw)/pool_dw+1-kw2)/dw2+1-pool_kw2)/pool_dw2+1) * outputFrameSize2
-  local sim_module = nn.Sequential()
-    :add(vecs_to_input)
-  
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, dw))
-    :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw, pool_dw))
-
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, dw2))
-    :add(nn.Tanh())
-    :add(nn.TemporalMaxPooling(pool_kw2, pool_dw2))
-
-    :add(nn.Reshape(mlp_input_dim2))
-    :add(HighwayMLP.mlp(mlp_input_dim2, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim2, self.sim_nhidden))
-    
-    :add(nn.Sigmoid()) 
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
-    :add(nn.LogSoftMax())
-    
-  return sim_module
+  return nn.Reshape(self.emb_dim)(conv_layer_4)
 
 end
 
-function LSTMSim:new_sim_module_conv1d()
-  print('Using conv1d sim module 1')
+function LSTMSimX:new_EMB_module()
 
-  local img_h = self.num_layers
-  local img_w = self.mem_dim 
+  local inputs = {}
+  local outputs = {}
 
-  local num_plate
-  local inputFrameSize
+  for l = 1, self.max_sent_length do
 
-  if self.structure == 'bilstm' then
+    local tok = nn.Identity()()
+    table.insert(inputs, tok)
 
-    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
-    if self.num_layers == 1 then
-      lvec = nn.JoinTable(1){lf, lb}
-      rvec = nn.JoinTable(1){rf, rb}
-    else
-      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
-      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
-      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
-    end
-    inputs = {lf, lb, rf, rb}
+    local cnn_out = addCNNUnit(self, tok)
+    table.insert(outputs, cnn_out)
 
-    local mult_dist = nn.CMulTable(){lvec, rvec}
-    local abssub_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
-
-    local conv1d_dist = nn.MulConstant(0.01)(nn.View(self.mem_dim*img_h*2)(nn.TemporalConvolution(self.mem_dim*img_h*2, self.mem_dim*img_h*2, 2, 1)
-        (nn.Reshape(2, self.mem_dim*img_h*2)(nn.JoinTable(1){lvec, rvec}))))
-
-    inputFrameSize = img_h*img_w*2
-    num_plate=3
-    local out_mat = nn.Reshape(num_plate, inputFrameSize)(nn.JoinTable(1){mult_dist, abssub_dist, conv1d_dist})
-
-    local inputs = {lf, lb, rf, rb}
-    vecs_to_input = nn.gModule(inputs, {out_mat})
-    
   end
 
-  local outputFrameSize = inputFrameSize
-  local kw = 2
-  local outputFrameSize2 = img_h*img_w
-  local kw2=1
-  local mlp_input_dim = (num_plate-kw+1-kw2+1)* outputFrameSize2
+  return localize(nn.gModule(inputs, outputs))
 
-  local sim_module = nn.Sequential()
-    :add(vecs_to_input)
-  
-    :add(nn.TemporalConvolution(inputFrameSize, outputFrameSize, kw, 1))
-    :add(nn.Tanh())
-
-    :add(nn.TemporalConvolution(outputFrameSize, outputFrameSize2, kw2, 1))
-    :add(nn.Tanh())
-
-    :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
-    :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    
-    :add(nn.Sigmoid()) 
-    :add(nn.Linear(self.sim_nhidden, self.num_classes))
-    :add(nn.LogSoftMax())
-  
-  return sim_module
-    
 end
 
-function LSTMSim:train(dataset)
+function LSTMSimX:train(dataset)
 
   self.llstm:training()
   self.rlstm:training()
@@ -314,11 +225,54 @@ function LSTMSim:train(dataset)
         local idx = indices[i + j - 1]
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
 
-        local linputs = self.emb_vecs:index(1, lsent:long()):double()
-        local rinputs = self.emb_vecs:index(1, rsent:long()):double()
-        dbg()
+        local lsent_X, rsent_X = dataset.lsents_S[idx], dataset.rsents_S[idx]
+
+        local linputs = {}
+
+        for k = 1, self.max_sent_length do
+          if k <= #lsent_X then
+            tok = lsent_X[k]
+            tok_vec = self:tok2characterIdx(tok)
+            table.insert(linputs, tok_vec)
+          else
+            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            table.insert(linputs, tok_vec)
+          end
+        end
 
 
+        linputs = self.EMB:forward(linputs)
+
+        local linputs_X = {}
+        for k = 1, #lsent_X do
+          table.insert(linputs_X, linputs[k])
+        end
+        linputs = nn.Reshape(#lsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(linputs_X))
+
+        local rinputs = {}
+
+        for k = 1, self.max_sent_length do
+          if k <= #rsent_X then
+            tok = rsent_X[k]
+            tok_vec = self:tok2characterIdx(tok)
+            table.insert(rinputs, tok_vec)
+          else
+            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            table.insert(rinputs, tok_vec)
+          end
+        end
+
+        rinputs = self.EMB:forward(rinputs)
+
+        local rinputs_X = {}
+        for k = 1, #rsent_X do
+          table.insert(rinputs_X, rinputs[k])
+        end
+        rinputs = nn.Reshape(#rsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(rinputs_X))
+
+
+        --local linputs_1 = self.emb_vecs:index(1, lsent:long()):double()
+        --local rinputs_1 = self.emb_vecs:index(1, rsent:long()):double()
 
          -- get sentence representations
         local inputs
@@ -344,6 +298,8 @@ function LSTMSim:train(dataset)
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
+
+        local lstm_grad
         if self.structure == 'lstm' then
           self:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
         elseif self.structure == 'bilstm' then
@@ -369,7 +325,7 @@ function LSTMSim:train(dataset)
 end
 
 -- LSTM backward propagation
-function LSTMSim:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMSimX:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
   if self.num_layers == 1 then
     lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -389,7 +345,7 @@ function LSTMSim:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
 end
 
 -- Bidirectional LSTM backward propagation
-function LSTMSim:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMSimX:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, lgrad_b, rgrad, rgrad_b
   if self.num_layers == 1 then
     lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -412,31 +368,80 @@ function LSTMSim:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
       rgrad_b[{1, l, {}}] = rep_grad[4][l]
     end
   end
-  self.llstm:backward(linputs, lgrad)
-  self.llstm_b:backward(linputs, lgrad_b, true)
-  self.rlstm:backward(rinputs, rgrad)
-  self.rlstm_b:backward(rinputs, rgrad_b, true)
+  --self.llstm:backward(linputs, lgrad)
+  --self.llstm_b:backward(linputs, lgrad_b, true)
+  --self.rlstm:backward(rinputs, rgrad)
+  --self.rlstm_b:backward(rinputs, rgrad_b, true)
 end
 
 -- Predict the similarity of a sentence pair.
-function LSTMSim:predict(lsent, rsent)
+function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
   self.llstm:evaluate()
   self.rlstm:evaluate()
-  local linputs = self.emb_vecs:index(1, lsent:long()):double()
-  local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+
+
+  --linputs length * emb_dim
+  --local linputs = self.emb_vecs:index(1, lsent:long()):double()
+  --local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+
+  local linputs = {}
+
+  for k = 1, self.max_sent_length do
+    if k <= #lsent_X then
+      tok = lsent_X[k]
+      tok_vec = self:tok2characterIdx(tok)
+      table.insert(linputs, tok_vec)
+    else
+      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      table.insert(linputs, tok_vec)
+    end
+  end
+
+
+  linputs = self.EMB:forward(linputs)
+
+  local linputs_X = {}
+  for k = 1, #lsent_X do
+    table.insert(linputs_X, linputs[k])
+  end
+  linputs = nn.Reshape(#lsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(linputs_X))
+
+
+
+  local rinputs = {}
+
+  for k = 1, self.max_sent_length do
+    if k <= #rsent_X then
+      tok = rsent_X[k]
+      tok_vec = self:tok2characterIdx(tok)
+      table.insert(rinputs, tok_vec)
+    else
+      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      table.insert(rinputs, tok_vec)
+    end
+  end
+
+  rinputs = self.EMB:forward(rinputs)
+
+  local rinputs_X = {}
+  for k = 1, #rsent_X do
+    table.insert(rinputs_X, rinputs[k])
+  end
+  rinputs = nn.Reshape(#rsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(rinputs_X))
+
+   -- get sentence representations
   local inputs
   if self.structure == 'lstm' then
     inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
   elseif self.structure == 'bilstm' then
-    self.llstm_b:evaluate()
-    self.rlstm_b:evaluate()
     inputs = {
       self.llstm:forward(linputs),
-      self.llstm_b:forward(linputs, true),
+      self.llstm_b:forward(linputs, true), -- true => reverse
       self.rlstm:forward(rinputs),
       self.rlstm_b:forward(rinputs, true)
     }
   end
+
   local output = self.sim_module:forward(inputs)
   self.llstm:forget()
   self.rlstm:forget()
@@ -450,18 +455,19 @@ end
 
 
 -- Produce similarity predictions for each sentence pair in the dataset.
-function LSTMSim:predict_dataset(dataset)
+function LSTMSimX:predict_dataset(dataset)
 
   local predictions = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
-    predictions[i] = self:predict(lsent, rsent)
+    local lsent_X, rsent_X = dataset.lsents_S[i], dataset.rsents_S[i]
+    predictions[i] = self:predict(lsent, lsent_X, rsent, rsent_X)
   end
   return predictions
 end
 
-function LSTMSim:print_config()
+function LSTMSimX:print_config()
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
@@ -475,7 +481,7 @@ end
 --
 --Serialization
 --
-function LSTMSim:save(path)
+function LSTMSimX:save(path)
   local config = {
     batch_size = self.batch_size,
     emb_vecs = self.emb_vecs:float(),
@@ -494,11 +500,50 @@ function LSTMSim:save(path)
 
 end
 
-function LSTMSim.load(path)
+function LSTMSimX.load(path)
   local state = torch.load(path)
-  local model = LSTMSim.new(state.config)
+  local model = LSTMSimX.new(state.config)
   model.params:copy(state.params)
   return model
+end
+
+function LSTMSimX:seq2vec(sequence)
+
+  local s = ''
+  --print(sequence)
+  for i=1, #sequence do
+    s = s .. sequence[i] .. " "
+  end
+  s = s:gsub("%s+", "")
+  s = trim(s)
+
+  self.length = 100
+
+  local s = s:lower()
+  local t = torch.Tensor(#self.alphabet, self.length)
+  t:zero()
+  for i = #s, math.max(#s - self.length + 1, 1), -1 do
+    if self.dict[s:sub(i,i)] then
+      t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
+    end
+  end
+  return localize(t:transpose(1,2))
+end
+
+
+function LSTMSimX:tok2characterIdx(token)
+
+  local s = token:lower()
+  local output = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+  for i = #s, math.max(#s - self.tok_length + 1, 1), -1 do
+    c = s:sub(i,i)
+    if self.dict[c] then
+      output[#s-i+1] = self.dict[c]
+    else
+      output[#s-i+1] = #self.alphabet+1
+    end
+  end
+  return localize(output)
 end
 
 
