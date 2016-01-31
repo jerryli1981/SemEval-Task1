@@ -88,6 +88,7 @@ function LSTMSimX:__init(config)
 
   -- share must only be called after getParameters, since this changes the
   -- location of the parameters
+  share_params(self.EMB, self.EMB)
   share_params(self.rlstm, self.llstm)
   if self.structure == 'bilstm' then
     -- tying the forward and backward weights improves performance
