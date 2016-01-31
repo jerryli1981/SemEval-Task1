@@ -101,7 +101,7 @@ local model
 
 if args.load == 'true' then
   print('using previous model ' .. model_save_pre_path)
-  model = LSTMSim.load(model_save_pre_path)
+  model = LSTMSimX.load(model_save_pre_path)
 else
   print('initialize new model')
 

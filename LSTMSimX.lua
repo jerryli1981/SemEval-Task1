@@ -24,7 +24,8 @@ function LSTMSimX:__init(config)
   --if tok2vec
   self.inputFrameSize = #self.alphabet
 
-  self.max_sent_length = 37
+  -- small dataset max length is 37, else rich dataset max length is 82
+  self.max_sent_length = 82
 
   self.tok_length = 12
 
@@ -142,17 +143,19 @@ function addCNNUnit(self, x)
 
   lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
 
-  conv_layer_1 = nn.Sigmoid()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
+  activation = nn.Threshold()
+
+  conv_layer_1 = activation(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
 
   pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
 
-  conv_layer_2 = nn.Sigmoid()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
+  conv_layer_2 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
 
   pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
 
-  conv_layer_3 = nn.Sigmoid()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
+  conv_layer_3 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
 
-  conv_layer_4 = nn.Sigmoid()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
+  conv_layer_4 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
 
   return nn.Reshape(self.emb_dim)(conv_layer_4)
 
