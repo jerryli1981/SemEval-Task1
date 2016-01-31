@@ -43,8 +43,8 @@ function CharCNNLSTMSim_tok:__init(config)
   self.pool_dw = 1
 
   -- optimizer configuration
-  --self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
-  self.optim_state = { learningRate = self.learning_rate }
+  self.optim_state = { learningRate = self.learning_rate, momentum = 0.9, decay = 1e-5 }
+  --self.optim_state = { learningRate = self.learning_rate }
 
   self.criterion = localize(nn.DistKLDivCriterion())
 
@@ -59,17 +59,17 @@ function addCNNUnit(self, x)
 
   lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
 
-  conv_layer_1 = nn.Threshold()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
+  conv_layer_1 = nn.ReLU()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
 
   pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
 
-  conv_layer_2 = nn.Threshold()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
+  conv_layer_2 = nn.ReLU()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
 
   pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
 
-  conv_layer_3 = nn.Threshold()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
+  conv_layer_3 = nn.ReLU()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
 
-  conv_layer_4 = nn.Threshold()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
+  conv_layer_4 = nn.ReLU()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
 
   return nn.Reshape(self.emb_dim)(conv_layer_4)
 
@@ -173,6 +173,14 @@ function CharCNNLSTMSim_tok:train(dataset)
       local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_classes-1)+1
       local ceil, floor = math.ceil(sim), math.floor(sim)
 
+      --if using past data then use below code
+      if ceil ==0 then
+        ceil=1
+      end
+      if floor ==0 then
+        floor=1
+      end
+
       if ceil == floor then
         targets[{j, floor}] = 1
       else
@@ -244,13 +252,13 @@ function CharCNNLSTMSim_tok:train(dataset)
       self.grad_params:div(batch_size)
 
       -- regularization
-      loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
-      self.grad_params:add(self.reg, self.params)
+      --loss = loss + 0.5 * self.reg * self.params:norm() ^ 2
+      --self.grad_params:add(self.reg, self.params)
 
       avgloss = avgloss + loss
       return loss, self.grad_params
     end
-    optim.adagrad(feval, self.params, self.optim_state)
+    optim.sgd(feval, self.params, self.optim_state)
     avgloss = avgloss/N
   end
   xlua.progress(dataset.size, dataset.size)
