@@ -43,7 +43,6 @@ function LSTMSimX:__init(config)
   self.pool_dw = 1
 
 
-
   -- word embedding
   self.emb_dim = config.emb_vecs:size(2)
   self.emb_vecs = config.emb_vecs
@@ -80,7 +79,6 @@ function LSTMSimX:__init(config)
   self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
-    :add(self.EMB)
     :add(self.llstm)
     :add(self.sim_module)
 
@@ -88,7 +86,6 @@ function LSTMSimX:__init(config)
 
   -- share must only be called after getParameters, since this changes the
   -- location of the parameters
-  share_params(self.EMB, self.EMB)
   share_params(self.rlstm, self.llstm)
   if self.structure == 'bilstm' then
     -- tying the forward and backward weights improves performance
@@ -272,8 +269,8 @@ function LSTMSimX:train(dataset)
         rinputs = nn.Reshape(#rsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(rinputs_X))
 
 
-        --local linputs_1 = self.emb_vecs:index(1, lsent:long()):double()
-        --local rinputs_1 = self.emb_vecs:index(1, rsent:long()):double()
+        local linputs_1 = self.emb_vecs:index(1, lsent:long()):double()
+        local rinputs_1 = self.emb_vecs:index(1, rsent:long()):double()
 
          -- get sentence representations
         local inputs
@@ -281,9 +278,9 @@ function LSTMSimX:train(dataset)
           inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
         elseif self.structure == 'bilstm' then
           inputs = {
-            self.llstm:forward(linputs),
+            self.llstm:forward(linputs_1),
             self.llstm_b:forward(linputs, true), -- true => reverse
-            self.rlstm:forward(rinputs),
+            self.rlstm:forward(rinputs_1),
             self.rlstm_b:forward(rinputs, true)
           }
         end
@@ -382,8 +379,8 @@ function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
 
 
   --linputs length * emb_dim
-  --local linputs = self.emb_vecs:index(1, lsent:long()):double()
-  --local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+  local linputs_1 = self.emb_vecs:index(1, lsent:long()):double()
+  local rinputs_1 = self.emb_vecs:index(1, rsent:long()):double()
 
   local linputs = {}
 
@@ -436,9 +433,9 @@ function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
     inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
   elseif self.structure == 'bilstm' then
     inputs = {
-      self.llstm:forward(linputs),
+      self.llstm:forward(linputs_1),
       self.llstm_b:forward(linputs, true), -- true => reverse
-      self.rlstm:forward(rinputs),
+      self.rlstm:forward(rinputs_1),
       self.rlstm_b:forward(rinputs, true)
     }
   end
