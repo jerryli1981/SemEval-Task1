@@ -59,7 +59,25 @@ function CharCNNLSTMSim_tok:__init(config)
 
 end
 
-function addUnit(prev_h, prev_c, x, inputSize, hiddenSize)
+function addCNNUnit(self, x)
+
+  lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
+
+  conv_layer_1 = nn.Threshold()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
+
+  pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
+
+  conv_layer_2 = nn.Threshold()(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
+
+  pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
+
+  reshape_layer = nn.Reshape(self.emb_dim)(pool_layer_2)
+
+  return reshape_layer
+
+end
+
+function addLSTMUnit(prev_h, prev_c, x, inputSize, hiddenSize)
 
   -- Input gate. Equation (7)
   i_gate = nn.Sigmoid()(nn.CAddTable()({
@@ -113,23 +131,14 @@ function CharCNNLSTMSim_tok:new_sim_module()
     local tok = nn.Identity()()
     table.insert(inputs, tok)
 
-    local cnn_out = nn.Reshape(self.emb_dim)(
-
-                    nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
-                    nn.Threshold()(
-                    nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(
-
-                    nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(
-                    nn.Threshold()(
-                    nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(
-                    nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(tok))))))))
+    local cnn_out = addCNNUnit(self, tok)
 
     if l <= self.max_sent_length then
       --lvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({lvec, cnn_out}) ) )
-      l_prev_h, l_prev_c = addUnit(l_prev_h, l_prev_c, cnn_out, self.emb_dim, self.mem_dim)
+      l_prev_h, l_prev_c = addLSTMUnit(l_prev_h, l_prev_c, cnn_out, self.emb_dim, self.mem_dim)
     else
       --rvec = nn.Tanh()( nn.Linear(self.emb_dim+ self.mem_dim, self.mem_dim)( nn.JoinTable(1)({rvec, cnn_out}) ) )
-      r_prev_h, r_prev_c = addUnit(r_prev_h, r_prev_c, cnn_out, self.emb_dim, self.mem_dim)
+      r_prev_h, r_prev_c = addLSTMUnit(r_prev_h, r_prev_c, cnn_out, self.emb_dim, self.mem_dim)
     end
   end
 
