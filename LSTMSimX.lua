@@ -301,7 +301,7 @@ function LSTMSimX:train(dataset)
         if self.structure == 'lstm' then
           self:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
         elseif self.structure == 'bilstm' then
-          self:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+          self:BiLSTM_backward(lsent, rsent, linputs, linputs_1, rinputs, rinputs_1, rep_grad)
         end
 
       end
@@ -343,7 +343,7 @@ function LSTMSimX:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
 end
 
 -- Bidirectional LSTM backward propagation
-function LSTMSimX:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMSimX:BiLSTM_backward(lsent, rsent, linputs, linputs_1, rinputs, rinputs_1, rep_grad)
   local lgrad, lgrad_b, rgrad, rgrad_b
   if self.num_layers == 1 then
     lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -366,10 +366,10 @@ function LSTMSimX:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
       rgrad_b[{1, l, {}}] = rep_grad[4][l]
     end
   end
-  --self.llstm:backward(linputs, lgrad)
-  --self.llstm_b:backward(linputs, lgrad_b, true)
-  --self.rlstm:backward(rinputs, rgrad)
-  --self.rlstm_b:backward(rinputs, rgrad_b, true)
+  self.llstm:backward(linputs_1, lgrad)
+  self.llstm_b:backward(linputs, lgrad_b, true)
+  self.rlstm:backward(rinputs_1, rgrad)
+  self.rlstm_b:backward(rinputs, rgrad_b, true)
 end
 
 -- Predict the similarity of a sentence pair.
