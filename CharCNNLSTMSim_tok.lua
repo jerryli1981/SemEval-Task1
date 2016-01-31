@@ -263,12 +263,17 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
 
   local inputs = {}
 
-  local lvec = torch.zeros(self.mem_dim)
-  local rvec = torch.zeros(self.mem_dim)
+  local lvec = localize(torch.zeros(self.mem_dim))
+  local rvec = localize(torch.zeros(self.mem_dim))
 
   table.insert(inputs, lvec)
   table.insert(inputs, rvec)
 
+  local lc = localize(torch.zeros(self.mem_dim))
+  local rc = localize(torch.zeros(self.mem_dim))
+
+  table.insert(inputs, lc)
+  table.insert(inputs, rc)
 
   for k = 1, self.max_sent_length do
     if k <= #lsent then
