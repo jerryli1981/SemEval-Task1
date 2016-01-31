@@ -52,16 +52,14 @@ function CharCNNLSTMSim_tok:__init(config)
 
   self.params, self.grad_params = self.sim_module:getParameters()
 
-  share_params(self.sim_module, self.sim_module)
-
 end
 
 function addCNNUnit(self, x)
 
 
-  --lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
+  lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
 
-  conv_layer_1 = nn.Threshold()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(x))
+  conv_layer_1 = nn.Threshold()(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
 
   pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
 
@@ -144,14 +142,18 @@ function CharCNNLSTMSim_tok:new_sim_module()
 
   local mult_dist = nn.CMulTable(){l_prev_h, r_prev_h}
   local add_dist = nn.Abs()(nn.CSubTable(){l_prev_h, r_prev_h})
+  local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
+  vecs_to_inputs = nn.gModule(inputs, {vec_dist_feats})
 
-  local probs = nn.LogSoftMax()(
-                nn.Linear(self.sim_nhidden, self.num_classes)(
-                nn.Sigmoid()(
-                nn.Linear(self.mem_dim*2, self.sim_nhidden)(
-                nn.JoinTable(1){mult_dist, add_dist}))))
+  local sim_module = nn.Sequential()
+    :add(vecs_to_inputs)
+    :add(nn.Linear(self.mem_dim*2, self.sim_nhidden))
+    :add(nn.Sigmoid())   -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
 
-  return localize(nn.gModule(inputs, {probs}))
+  return localize(sim_module)
+
 
 end
 
@@ -170,13 +172,6 @@ function CharCNNLSTMSim_tok:train(dataset)
     for j=1, batch_size do
       local sim = dataset.sim_labels[indices[i+j-1]] * (self.num_classes-1)+1
       local ceil, floor = math.ceil(sim), math.floor(sim)
-
-      if ceil ==0 then
-        ceil=1
-      end
-      if floor ==0 then
-        floor=1
-      end
 
       if ceil == floor then
         targets[{j, floor}] = 1
@@ -197,14 +192,14 @@ function CharCNNLSTMSim_tok:train(dataset)
 
         local inputs = {}
 
-        local lvec = localize(torch.zeros(self.mem_dim))
-        local rvec = localize(torch.zeros(self.mem_dim))
+        local lvec = localize(torch.rand(self.mem_dim))
+        local rvec = localize(torch.rand(self.mem_dim))
 
         table.insert(inputs, lvec)
         table.insert(inputs, rvec)
 
-        local lc = localize(torch.zeros(self.mem_dim))
-        local rc = localize(torch.zeros(self.mem_dim))
+        local lc = localize(torch.rand(self.mem_dim))
+        local rc = localize(torch.rand(self.mem_dim))
 
         table.insert(inputs, lc)
         table.insert(inputs, rc)
@@ -212,12 +207,12 @@ function CharCNNLSTMSim_tok:train(dataset)
         for k = 1, self.max_sent_length do
           if k <= #lsent then
             tok = lsent[k]
-            --tok_vec = self:tok2characterIdx(tok)
-            tok_vec = self:tok2vec(tok)
+            tok_vec = self:tok2characterIdx(tok)
+            --tok_vec = self:tok2vec(tok)
             table.insert(inputs, tok_vec)
           else
-            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-            tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
+            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            --tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
             table.insert(inputs, tok_vec)
           end
         end
@@ -225,12 +220,12 @@ function CharCNNLSTMSim_tok:train(dataset)
         for k = 1, self.max_sent_length do
           if k <= #rsent then
             tok = rsent[k]
-            --tok_vec = self:tok2characterIdx(tok)
-            tok_vec = self:tok2vec(tok)
+            tok_vec = self:tok2characterIdx(tok)
+            --tok_vec = self:tok2vec(tok)
             table.insert(inputs, tok_vec)
           else
-            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-            tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
+            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            --tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
             table.insert(inputs, tok_vec)
           end
         end
@@ -267,14 +262,14 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
 
   local inputs = {}
 
-  local lvec = localize(torch.zeros(self.mem_dim))
-  local rvec = localize(torch.zeros(self.mem_dim))
+  local lvec = localize(torch.rand(self.mem_dim))
+  local rvec = localize(torch.rand(self.mem_dim))
 
   table.insert(inputs, lvec)
   table.insert(inputs, rvec)
 
-  local lc = localize(torch.zeros(self.mem_dim))
-  local rc = localize(torch.zeros(self.mem_dim))
+  local lc = localize(torch.rand(self.mem_dim))
+  local rc = localize(torch.rand(self.mem_dim))
 
   table.insert(inputs, lc)
   table.insert(inputs, rc)
@@ -282,12 +277,12 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
   for k = 1, self.max_sent_length do
     if k <= #lsent then
       tok = lsent[k]
-      --tok_vec = self:tok2characterIdx(tok)
-      tok_vec = self:tok2vec(tok)
+      tok_vec = self:tok2characterIdx(tok)
+      --tok_vec = self:tok2vec(tok)
       table.insert(inputs, tok_vec)
     else
-      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-      tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
+      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      --tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
       table.insert(inputs, tok_vec)
     end
   end
@@ -295,12 +290,12 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
   for k = 1, self.max_sent_length do
     if k <= #rsent then
       tok = rsent[k]
-      --tok_vec = self:tok2characterIdx(tok)
-      tok_vec = self:tok2vec(tok)
+      tok_vec = self:tok2characterIdx(tok)
+      --tok_vec = self:tok2vec(tok)
       table.insert(inputs, tok_vec)
     else
-      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-      tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
+      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      --tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
       table.insert(inputs, tok_vec)
     end
   end
