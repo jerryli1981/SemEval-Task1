@@ -217,7 +217,7 @@ function CharCNNLSTMSim_tok:train(dataset)
             table.insert(inputs, tok_vec)
           else
             --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-            tok_vec = torch.zeros(self.tok_length, #self.alphabet)
+            tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
             table.insert(inputs, tok_vec)
           end
         end
@@ -230,7 +230,7 @@ function CharCNNLSTMSim_tok:train(dataset)
             table.insert(inputs, tok_vec)
           else
             --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
-            tok_vec = torch.zeros(self.tok_length, #self.alphabet)
+            tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
             table.insert(inputs, tok_vec)
           end
         end
@@ -286,7 +286,8 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
       tok_vec = self:tok2vec(tok)
       table.insert(inputs, tok_vec)
     else
-      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
       table.insert(inputs, tok_vec)
     end
   end
@@ -298,7 +299,8 @@ function CharCNNLSTMSim_tok:predict(lsent, rsent)
       tok_vec = self:tok2vec(tok)
       table.insert(inputs, tok_vec)
     else
-      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      tok_vec = localize(torch.zeros(self.tok_length, #self.alphabet))
       table.insert(inputs, tok_vec)
     end
   end
