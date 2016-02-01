@@ -187,9 +187,7 @@ function LSTMSimX:new_sim_module_conv1d()
     :add(nn.Tanh())
 
     :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    
     :add(nn.Sigmoid()) 
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -236,7 +234,10 @@ function addCNNUnit_Onehot(self, x)
 
   conv_layer_4 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
 
-  return nn.Reshape(self.emb_dim)(conv_layer_4)
+  reshape_layer = nn.Reshape(self.emb_dim)(conv_layer_4)
+
+  return HighwayMLP.mlp(self.emb_dim, 1, nil, activation)(reshape_layer)
+
 
 end
 
