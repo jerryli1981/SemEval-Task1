@@ -69,32 +69,3 @@ function read_dataset(dir, vocab)
 
   return dataset
 end
-
-function read_dataset_char(dir)
-
-  local entlabmap = {NEUTRAL=3, CONTRADICTION=1, ENTAILMENT=2}
-  local dataset = {}
-
-  dataset.lsents_S = read_sentences(dir .. 'a.toks', vocab)
-  dataset.rsents_S = read_sentences(dir .. 'b.toks', vocab)
-
-  dataset.lsents = read_charsequence(dir .. 'a.toks')
-  dataset.rsents = read_charsequence(dir .. 'b.toks')
-  dataset.size = #dataset.lsents
-
-  local sim_file = torch.DiskFile(dir .. 'sim.txt', 'r')
-  local ent_file = io.open(dir .. 'ent.txt', 'r')
-  dataset.sim_labels = torch.Tensor(dataset.size)
-  dataset.ent_labels = torch.Tensor(dataset.size)
-
-
-  for i = 1, dataset.size do
-    dataset.sim_labels[i] = 0.25 * (sim_file:readDouble() - 1)
-    dataset.ent_labels[i] = entlabmap[ent_file:read()]
-  end
-
-  sim_file:close()
-  ent_file:close()
-
-  return dataset
-end

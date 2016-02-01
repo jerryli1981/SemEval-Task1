@@ -21,10 +21,10 @@ include('CharCNNLSTMSim_tok.lua')
 include('CharCNNLSTMSim_seq.lua')
 include('CharLSTMSim.lua')
 include('CharCNNSim.lua')
-
 include('CharCNN.lua')
 
-include('LSTMSimX.lua')
+include('LSTMSimChar.lua')
+include('LSTMEntChar.lua')
 
 
 
