@@ -18,14 +18,10 @@ function LSTMSimX:__init(config)
 
   self.char_vocab_size = #self.alphabet+1
 
-  --if tok2char
-  --self.inputFrameSize = 50
-
-  --if tok2vec
   self.inputFrameSize = #self.alphabet
 
   -- small dataset max length is 37, else rich dataset max length is 82
-  self.max_sent_length = 82
+  self.max_sent_length = 37
 
   self.tok_length = 12
 
@@ -140,12 +136,31 @@ end
 
 function addCNNUnit(self, x)
 
+  activation = nn.Threshold() -- threshold is better than tanh
 
   lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
 
-  activation = nn.Threshold()
-
   conv_layer_1 = activation(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
+
+  pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
+
+  conv_layer_2 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
+
+  pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
+
+  conv_layer_3 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
+
+  conv_layer_4 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
+
+  return nn.Reshape(self.emb_dim)(conv_layer_4)
+
+end
+
+function addCNNUnit_Onehot(self, x)
+
+  activation = nn.Threshold() -- threshold is better than tanh
+
+  conv_layer_1 = activation(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(x))
 
   pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
 
@@ -171,7 +186,7 @@ function LSTMSimX:new_EMB_module()
     local tok = nn.Identity()()
     table.insert(inputs, tok)
 
-    local cnn_out = addCNNUnit(self, tok)
+    local cnn_out = addCNNUnit_Onehot(self, tok)
     table.insert(outputs, cnn_out)
 
   end
@@ -233,14 +248,15 @@ function LSTMSimX:train(dataset)
         for k = 1, self.max_sent_length do
           if k <= #lsent_X then
             tok = lsent_X[k]
-            tok_vec = self:tok2characterIdx(tok)
+            --tok_vec = self:tok2characterIdx(tok)
+            tok_vec = self:tok2vec(tok)
             table.insert(linputs, tok_vec)
           else
-            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
             table.insert(linputs, tok_vec)
           end
         end
-
 
         linputs = self.EMB:forward(linputs)
 
@@ -255,10 +271,12 @@ function LSTMSimX:train(dataset)
         for k = 1, self.max_sent_length do
           if k <= #rsent_X then
             tok = rsent_X[k]
-            tok_vec = self:tok2characterIdx(tok)
+            --tok_vec = self:tok2characterIdx(tok)
+            tok_vec = self:tok2vec(tok)
             table.insert(rinputs, tok_vec)
           else
-            tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
             table.insert(rinputs, tok_vec)
           end
         end
@@ -390,10 +408,12 @@ function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
   for k = 1, self.max_sent_length do
     if k <= #lsent_X then
       tok = lsent_X[k]
-      tok_vec = self:tok2characterIdx(tok)
+      --tok_vec = self:tok2characterIdx(tok)
+      tok_vec =self:tok_vec(tok)
       table.insert(linputs, tok_vec)
     else
-      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
       table.insert(linputs, tok_vec)
     end
   end
@@ -414,10 +434,12 @@ function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
   for k = 1, self.max_sent_length do
     if k <= #rsent_X then
       tok = rsent_X[k]
-      tok_vec = self:tok2characterIdx(tok)
+      --tok_vec = self:tok2characterIdx(tok)
+      tok_vec =self:tok_vec(tok)
       table.insert(rinputs, tok_vec)
     else
-      tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
       table.insert(rinputs, tok_vec)
     end
   end
@@ -529,6 +551,20 @@ function LSTMSimX:seq2vec(sequence)
     end
   end
   return localize(t:transpose(1,2))
+end
+
+function LSTMSimX:tok2vec(token)
+
+  local s = token:lower()
+  
+  local t = torch.Tensor(#self.alphabet, self.tok_length)
+  t:zero()
+  for i = #s, math.max(#s - self.tok_length + 1, 1), -1 do
+    if self.dict[s:sub(i,i)] then
+      t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
+    end
+  end
+  return localize(t:transpose(1,2):contiguous())
 end
 
 
