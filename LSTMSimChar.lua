@@ -1,6 +1,6 @@
-local LSTMSimX = torch.class('LSTMSimX')
+local LSTMSimChar = torch.class('LSTMSimChar')
 
-function LSTMSimX:__init(config)
+function LSTMSimChar:__init(config)
   self.mem_dim       = config.mem_dim       or 150
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -91,7 +91,7 @@ function LSTMSimX:__init(config)
   end
 end
 
-function LSTMSimX:new_sim_module()
+function LSTMSimChar:new_sim_module()
   print('Using simple sim module')
   local lvec, rvec, inputs, input_dim
   if self.structure == 'lstm' then
@@ -134,7 +134,7 @@ function LSTMSimX:new_sim_module()
   return sim_module
 end
 
-function LSTMSimX:new_sim_module_conv1d()
+function LSTMSimChar:new_sim_module_conv1d()
   print('Using conv1d sim module 1')
 
   local img_h = self.num_layers
@@ -241,7 +241,7 @@ function addCNNUnit_Onehot(self, x)
 
 end
 
-function LSTMSimX:new_EMB_module()
+function LSTMSimChar:new_EMB_module()
 
   local inputs = {}
   local outputs = {}
@@ -260,7 +260,7 @@ function LSTMSimX:new_EMB_module()
 
 end
 
-function LSTMSimX:train(dataset)
+function LSTMSimChar:train(dataset)
 
   self.llstm:training()
   self.rlstm:training()
@@ -382,8 +382,6 @@ function LSTMSimX:train(dataset)
 
         local rep_grad = self.sim_module:backward(inputs, sim_grad)
 
-
-        local lstm_grad
         if self.structure == 'lstm' then
           self:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
         elseif self.structure == 'bilstm' then
@@ -409,7 +407,7 @@ function LSTMSimX:train(dataset)
 end
 
 -- LSTM backward propagation
-function LSTMSimX:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMSimChar:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
   if self.num_layers == 1 then
     lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -429,7 +427,7 @@ function LSTMSimX:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
 end
 
 -- Bidirectional LSTM backward propagation
-function LSTMSimX:BiLSTM_backward(lsent, rsent, linputs, linputs_1, rinputs, rinputs_1, rep_grad)
+function LSTMSimChar:BiLSTM_backward(lsent, rsent, linputs, linputs_1, rinputs, rinputs_1, rep_grad)
   local lgrad, lgrad_b, rgrad, rgrad_b
   if self.num_layers == 1 then
     lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -459,7 +457,7 @@ function LSTMSimX:BiLSTM_backward(lsent, rsent, linputs, linputs_1, rinputs, rin
 end
 
 -- Predict the similarity of a sentence pair.
-function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
+function LSTMSimChar:predict(lsent, lsent_X, rsent, rsent_X)
   self.llstm:evaluate()
   self.rlstm:evaluate()
 
@@ -543,7 +541,7 @@ end
 
 
 -- Produce similarity predictions for each sentence pair in the dataset.
-function LSTMSimX:predict_dataset(dataset)
+function LSTMSimChar:predict_dataset(dataset)
 
   local predictions = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
@@ -555,7 +553,7 @@ function LSTMSimX:predict_dataset(dataset)
   return predictions
 end
 
-function LSTMSimX:print_config()
+function LSTMSimChar:print_config()
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
@@ -569,7 +567,7 @@ end
 --
 --Serialization
 --
-function LSTMSimX:save(path)
+function LSTMSimChar:save(path)
   local config = {
     batch_size = self.batch_size,
     emb_vecs = self.emb_vecs:float(),
@@ -588,14 +586,14 @@ function LSTMSimX:save(path)
 
 end
 
-function LSTMSimX.load(path)
+function LSTMSimChar.load(path)
   local state = torch.load(path)
-  local model = LSTMSimX.new(state.config)
+  local model = LSTMSimChar.new(state.config)
   model.params:copy(state.params)
   return model
 end
 
-function LSTMSimX:seq2vec(sequence)
+function LSTMSimChar:seq2vec(sequence)
 
   local s = ''
   --print(sequence)
@@ -618,7 +616,7 @@ function LSTMSimX:seq2vec(sequence)
   return localize(t:transpose(1,2))
 end
 
-function LSTMSimX:tok2vec(token)
+function LSTMSimChar:tok2vec(token)
 
   local s = token:lower()
   
@@ -633,7 +631,7 @@ function LSTMSimX:tok2vec(token)
 end
 
 
-function LSTMSimX:tok2characterIdx(token)
+function LSTMSimChar:tok2characterIdx(token)
 
   local s = token:lower()
   local output = torch.Tensor(self.tok_length):fill(#self.alphabet+1)

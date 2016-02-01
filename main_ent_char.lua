@@ -83,11 +83,11 @@ local predictions_save_path, model_save_path, model_save_pre_path
 
 while true do
   predictions_save_path = string.format(
-    predictions_dir .. '/sim-%s.%dl.%dd.%d.pred', args.structure, args.num_layers, args.dim, file_idx)
+    predictions_dir .. '/ent-%s.%dl.%dd.%d.pred', args.structure, args.num_layers, args.dim, file_idx)
   model_save_path = string.format(
-    models_dir .. '/sim-%s.%dl.%dd.%d.th', args.structure, args.num_layers, args.dim, file_idx)
+    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.structure, args.num_layers, args.dim, file_idx)
   model_save_pre_path = string.format(
-    models_dir .. '/sim-%s.%dl.%dd.%d.th', args.structure, args.num_layers, args.dim, file_idx-1)
+    models_dir .. '/ent-%s.%dl.%dd.%d.th', args.structure, args.num_layers, args.dim, file_idx-1)
   if lfs.attributes(predictions_save_path) == nil and lfs.attributes(model_save_path) == nil then
    break
   end
@@ -99,11 +99,11 @@ local model
 
 if args.load == 'true' then
   print('using previous model ' .. model_save_pre_path)
-  model = LSTMEnt.load(model_save_pre_path)
+  model = LSTMEntChar.load(model_save_pre_path)
 else
   print('initialize new model')
 
-  model = LSTMEnt{
+  model = LSTMEntChar{
     emb_vecs   = vecs,
     mem_dim    = args.dim,
     structure = args.structure,
@@ -141,7 +141,7 @@ for i = 1, num_epochs do
   if dev_ent_score >= best_dev_score then
     best_dev_score = dev_ent_score
 
-    best_dev_model = LSTMEnt{
+    best_dev_model = LSTMEntChar{
       emb_vecs   = vecs,
       mem_dim    = args.dim,
       structure = args.structure,

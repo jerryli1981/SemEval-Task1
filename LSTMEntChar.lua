@@ -1,6 +1,6 @@
-local LSTMEnt = torch.class('LSTMEnt')
+local LSTMEntChar = torch.class('LSTMEntChar')
 
-function LSTMEnt:__init(config)
+function LSTMEntChar:__init(config)
   self.mem_dim       = config.mem_dim       or 150
   self.learning_rate = config.learning_rate or 0.05
   self.batch_size    = config.batch_size    or 25
@@ -8,6 +8,36 @@ function LSTMEnt:__init(config)
   self.sim_nhidden   = config.sim_nhidden   or 50
   self.structure     = config.structure     or 'lstm'
   self.num_layers    = config.num_layers    or 1
+
+  self.alphabet = "abcdefghijklmnopqrstuvwxyz0123456789"
+
+  self.dict = {}
+  for i = 1,#self.alphabet do
+    self.dict[self.alphabet:sub(i,i)] = i
+  end
+
+  self.char_vocab_size = #self.alphabet+1
+
+  self.inputFrameSize = #self.alphabet
+
+  -- small dataset max length is 37, else rich dataset max length is 82
+  self.max_sent_length = 37
+
+  self.tok_length = 12
+
+  self.outputFrameSize = 100
+
+  self.emb_dim  = (self.outputFrameSize * 3)
+
+  self.mem_dim = 100
+
+  self.num_classes = 5
+
+  self.kw = 3
+  self.kw2 = 3
+
+  self.pool_kw = 2
+  self.pool_dw = 1
 
   -- word embedding
   self.emb_dim = config.emb_vecs:size(2)
@@ -19,6 +49,8 @@ function LSTMEnt:__init(config)
   self.optim_state = { learningRate = self.learning_rate }
 
   self.criterion = nn.ClassNLLCriterion()
+
+  self.EMB = self:new_EMB_module()
 
   -- initialize lstm model
   local lstm_config = {
@@ -58,7 +90,50 @@ function LSTMEnt:__init(config)
   end
 end
 
-function LSTMEnt:new_sim_module_conv1d()
+function LSTMEntChar:new_sim_module()
+  print('Using simple sim module')
+  local lvec, rvec, inputs, input_dim
+  if self.structure == 'lstm' then
+    -- standard (left-to-right) LSTM
+    input_dim = 2 * self.num_layers * self.mem_dim
+    local linput, rinput = nn.Identity()(), nn.Identity()()
+    if self.num_layers == 1 then
+      lvec, rvec = linput, rinput
+    else
+      lvec, rvec = nn.JoinTable(1)(linput), nn.JoinTable(1)(rinput)
+    end
+    inputs = {linput, rinput}
+  elseif self.structure == 'bilstm' then
+    -- bidirectional LSTM
+    input_dim = 4 * self.num_layers * self.mem_dim
+    local lf, lb, rf, rb = nn.Identity()(), nn.Identity()(), nn.Identity()(), nn.Identity()()
+    if self.num_layers == 1 then
+      lvec = nn.JoinTable(1){lf, lb}
+      rvec = nn.JoinTable(1){rf, rb}
+    else
+      -- in the multilayer case, each input is a table of hidden vectors (one for each layer)
+      lvec = nn.JoinTable(1){nn.JoinTable(1)(lf), nn.JoinTable(1)(lb)}
+      rvec = nn.JoinTable(1){nn.JoinTable(1)(rf), nn.JoinTable(1)(rb)}
+    end
+    inputs = {lf, lb, rf, rb}
+  end
+
+  local mult_dist = nn.CMulTable(){lvec, rvec}
+  local add_dist = nn.Abs()(nn.CSubTable(){lvec, rvec})
+  local vec_dist_feats = nn.JoinTable(1){mult_dist, add_dist}
+  local vecs_to_input = nn.gModule(inputs, {vec_dist_feats})
+
+   -- define similarity model architecture
+  local sim_module = nn.Sequential()
+    :add(vecs_to_input)
+    :add(nn.Linear(input_dim, self.sim_nhidden))
+    :add(nn.Sigmoid())    -- does better than tanh
+    :add(nn.Linear(self.sim_nhidden, self.num_classes))
+    :add(nn.LogSoftMax())
+  return sim_module
+end
+
+function LSTMEntChar:new_sim_module_conv1d()
   print('Using conv1d sim module 1')
 
   local img_h = self.num_layers
@@ -111,9 +186,7 @@ function LSTMEnt:new_sim_module_conv1d()
     :add(nn.Tanh())
 
     :add(nn.Reshape(mlp_input_dim))
-    :add(HighwayMLP.mlp(mlp_input_dim, 1, nil, nn.Sigmoid()))
     :add(nn.Linear(mlp_input_dim, self.sim_nhidden))
-    
     :add(nn.Sigmoid()) 
     :add(nn.Linear(self.sim_nhidden, self.num_classes))
     :add(nn.LogSoftMax())
@@ -122,7 +195,72 @@ function LSTMEnt:new_sim_module_conv1d()
     
 end
 
-function LSTMEnt:train(dataset)
+function addCNNUnit(self, x)
+
+  activation = nn.Threshold() -- threshold is better than tanh
+
+  lookup_layer = nn.LookupTable(self.char_vocab_size, self.inputFrameSize)(x)
+
+  conv_layer_1 = activation(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(lookup_layer))
+
+  pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
+
+  conv_layer_2 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
+
+  pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
+
+  conv_layer_3 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
+
+  conv_layer_4 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
+
+  return nn.Reshape(self.emb_dim)(conv_layer_4)
+
+end
+
+function addCNNUnit_Onehot(self, x)
+
+  activation = nn.Threshold() -- threshold is better than tanh
+
+  conv_layer_1 = activation(nn.TemporalConvolution(self.inputFrameSize, self.outputFrameSize, self.kw)(x))
+
+  pool_layer_1 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_1)
+
+  conv_layer_2 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(pool_layer_1))
+
+  pool_layer_2 = nn.TemporalMaxPooling(self.pool_kw, self.pool_dw)(conv_layer_2)
+
+  conv_layer_3 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_2))
+
+  conv_layer_4 = activation(nn.TemporalConvolution(self.outputFrameSize, self.outputFrameSize, self.kw2)(conv_layer_3))
+
+  reshape_layer = nn.Reshape(self.emb_dim)(conv_layer_4)
+
+  return HighwayMLP.mlp(self.emb_dim, 1, nil, activation)(reshape_layer)
+
+
+end
+
+function LSTMEntChar:new_EMB_module()
+
+  local inputs = {}
+  local outputs = {}
+
+  for l = 1, self.max_sent_length do
+
+    local tok = nn.Identity()()
+    table.insert(inputs, tok)
+
+    local cnn_out = addCNNUnit_Onehot(self, tok)
+    table.insert(outputs, cnn_out)
+
+  end
+
+  return localize(nn.gModule(inputs, outputs))
+
+end
+
+
+function LSTMEntChar:train(dataset)
 
   self.llstm:training()
   self.rlstm:training()
@@ -150,8 +288,59 @@ function LSTMEnt:train(dataset)
         local lsent, rsent = dataset.lsents[idx], dataset.rsents[idx]
         local ent = dataset.ent_labels[idx]
 
-        local linputs = self.emb_vecs:index(1, lsent:long()):double()
-        local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+        local lsent_X, rsent_X = dataset.lsents_S[idx], dataset.rsents_S[idx]
+
+        local linputs = {}
+
+        for k = 1, self.max_sent_length do
+          if k <= #lsent_X then
+            tok = lsent_X[k]
+            --tok_vec = self:tok2characterIdx(tok)
+            tok_vec = self:tok2vec(tok)
+            table.insert(linputs, tok_vec)
+          else
+            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
+            table.insert(linputs, tok_vec)
+          end
+        end
+
+        linputs = self.EMB:forward(linputs)
+
+        local linputs_X = {}
+        for k = 1, #lsent_X do
+          table.insert(linputs_X, linputs[k])
+        end
+        linputs = nn.Reshape(#lsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(linputs_X))
+
+        local rinputs = {}
+
+        for k = 1, self.max_sent_length do
+          if k <= #rsent_X then
+            tok = rsent_X[k]
+            --tok_vec = self:tok2characterIdx(tok)
+            tok_vec = self:tok2vec(tok)
+            table.insert(rinputs, tok_vec)
+          else
+            --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+            tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
+            table.insert(rinputs, tok_vec)
+          end
+        end
+
+        rinputs = self.EMB:forward(rinputs)
+
+        local rinputs_X = {}
+        for k = 1, #rsent_X do
+          table.insert(rinputs_X, rinputs[k])
+        end
+        rinputs = nn.Reshape(#rsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(rinputs_X))
+
+
+        local linputs_1 = self.emb_vecs:index(1, lsent:long()):double()
+        local rinputs_1 = self.emb_vecs:index(1, rsent:long()):double()
+
+
 
          -- get sentence representations
         local inputs
@@ -159,9 +348,9 @@ function LSTMEnt:train(dataset)
           inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
         elseif self.structure == 'bilstm' then
           inputs = {
-            self.llstm:forward(linputs),
+            self.llstm:forward(linputs_1),
             self.llstm_b:forward(linputs, true), -- true => reverse
-            self.rlstm:forward(rinputs),
+            self.rlstm:forward(rinputs_1),
             self.rlstm_b:forward(rinputs, true)
           }
         end
@@ -180,7 +369,7 @@ function LSTMEnt:train(dataset)
         if self.structure == 'lstm' then
           self:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
         elseif self.structure == 'bilstm' then
-          self:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+          self:BiLSTM_backward(lsent, rsent, linputs, linputs_1, rinputs, rinputs_1, rep_grad)
         end
 
       end
@@ -202,7 +391,7 @@ function LSTMEnt:train(dataset)
 end
 
 -- LSTM backward propagation
-function LSTMEnt:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMEntChar:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
   local lgrad, rgrad
   if self.num_layers == 1 then
     lgrad = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -222,7 +411,7 @@ function LSTMEnt:LSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
 end
 
 -- Bidirectional LSTM backward propagation
-function LSTMEnt:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
+function LSTMEntChar:BiLSTM_backward(lsent, rsent, linputs, linputs_1, rinputs, rinputs_1, rep_grad)
   local lgrad, lgrad_b, rgrad, rgrad_b
   if self.num_layers == 1 then
     lgrad   = torch.zeros(lsent:nElement(), self.mem_dim)
@@ -245,32 +434,86 @@ function LSTMEnt:BiLSTM_backward(lsent, rsent, linputs, rinputs, rep_grad)
       rgrad_b[{1, l, {}}] = rep_grad[4][l]
     end
   end
-  self.llstm:backward(linputs, lgrad)
+  self.llstm:backward(linputs_1, lgrad)
   self.llstm_b:backward(linputs, lgrad_b, true)
-  self.rlstm:backward(rinputs, rgrad)
+  self.rlstm:backward(rinputs_1, rgrad)
   self.rlstm_b:backward(rinputs, rgrad_b, true)
 end
 
 -- Predict the similarity of a sentence pair.
-function LSTMEnt:predict(lsent, rsent)
+function LSTMEntChar:predict(lsent, lsent_X, rsent, rsent_X)
   self.llstm:evaluate()
   self.rlstm:evaluate()
-  local linputs = self.emb_vecs:index(1, lsent:long()):double()
-  local rinputs = self.emb_vecs:index(1, rsent:long()):double()
+  --linputs length * emb_dim
+  local linputs_1 = self.emb_vecs:index(1, lsent:long()):double()
+  local rinputs_1 = self.emb_vecs:index(1, rsent:long()):double()
+
+  local linputs = {}
+
+  for k = 1, self.max_sent_length do
+    if k <= #lsent_X then
+      tok = lsent_X[k]
+      --tok_vec = self:tok2characterIdx(tok)
+      tok_vec =self:tok2vec(tok)
+      table.insert(linputs, tok_vec)
+    else
+      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
+      table.insert(linputs, tok_vec)
+    end
+  end
+
+
+  linputs = self.EMB:forward(linputs)
+
+  local linputs_X = {}
+  for k = 1, #lsent_X do
+    table.insert(linputs_X, linputs[k])
+  end
+  linputs = nn.Reshape(#lsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(linputs_X))
+
+
+
+  local rinputs = {}
+
+  for k = 1, self.max_sent_length do
+    if k <= #rsent_X then
+      tok = rsent_X[k]
+      --tok_vec = self:tok2characterIdx(tok)
+      tok_vec =self:tok2vec(tok)
+      table.insert(rinputs, tok_vec)
+    else
+      --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+      tok_vec = localize(torch.rand(self.tok_length, #self.alphabet))
+      table.insert(rinputs, tok_vec)
+    end
+  end
+
+  rinputs = self.EMB:forward(rinputs)
+
+  local rinputs_X = {}
+  for k = 1, #rsent_X do
+    table.insert(rinputs_X, rinputs[k])
+  end
+  rinputs = nn.Reshape(#rsent_X, self.emb_dim):forward(nn.JoinTable(1):forward(rinputs_X))
+
+   -- get sentence representations
   local inputs
   if self.structure == 'lstm' then
     inputs = {self.llstm:forward(linputs), self.rlstm:forward(rinputs)}
   elseif self.structure == 'bilstm' then
-    self.llstm_b:evaluate()
-    self.rlstm_b:evaluate()
     inputs = {
-      self.llstm:forward(linputs),
-      self.llstm_b:forward(linputs, true),
-      self.rlstm:forward(rinputs),
+      self.llstm:forward(linputs_1),
+      self.llstm_b:forward(linputs, true), -- true => reverse
+      self.rlstm:forward(rinputs_1),
       self.rlstm_b:forward(rinputs, true)
     }
   end
+
   local output = self.sim_module:forward(inputs)
+
+
+
   local prediction = argmax(output)
   self.llstm:forget()
   self.rlstm:forget()
@@ -295,18 +538,19 @@ end
 
 
 -- Produce similarity predictions for each sentence pair in the dataset.
-function LSTMEnt:predict_dataset(dataset)
+function LSTMEntChar:predict_dataset(dataset)
 
   local predictions = torch.Tensor(dataset.size)
   for i = 1, dataset.size do
     xlua.progress(i, dataset.size)
     local lsent, rsent = dataset.lsents[i], dataset.rsents[i]
-    predictions[i] = self:predict(lsent, rsent)
+    local lsent_X, rsent_X = dataset.lsents_S[i], dataset.rsents_S[i]
+    predictions[i] = self:predict(lsent, lsent_X, rsent, rsent_X)
   end
   return predictions
 end
 
-function LSTMEnt:print_config()
+function LSTMEntChar:print_config()
   printf('%-25s = %d\n',   'word vector dim', self.emb_dim)
   printf('%-25s = %d\n',   'LSTM memory dim', self.mem_dim)
   printf('%-25s = %.2e\n', 'regularization strength', self.reg)
@@ -320,7 +564,7 @@ end
 --
 --Serialization
 --
-function LSTMEnt:save(path)
+function LSTMEntChar:save(path)
   local config = {
     batch_size = self.batch_size,
     emb_vecs = self.emb_vecs:float(),
@@ -339,12 +583,76 @@ function LSTMEnt:save(path)
 
 end
 
-function LSTMEnt.load(path)
+function LSTMEntChar.load(path)
   local state = torch.load(path)
-  local model = LSTMSim.new(state.config)
+  local model = LSTMEntChar.new(state.config)
   model.params:copy(state.params)
   return model
 end
+
+function LSTMEntChar:seq2vec(sequence)
+
+  local s = ''
+  --print(sequence)
+  for i=1, #sequence do
+    s = s .. sequence[i] .. " "
+  end
+  s = s:gsub("%s+", "")
+  s = trim(s)
+
+  self.length = 100
+
+  local s = s:lower()
+  local t = torch.Tensor(#self.alphabet, self.length)
+  t:zero()
+  for i = #s, math.max(#s - self.length + 1, 1), -1 do
+    if self.dict[s:sub(i,i)] then
+      t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
+    end
+  end
+  return localize(t:transpose(1,2))
+end
+
+function LSTMEntChar:tok2vec(token)
+
+  local s = token:lower()
+  
+  local t = torch.Tensor(#self.alphabet, self.tok_length)
+  t:zero()
+  for i = #s, math.max(#s - self.tok_length + 1, 1), -1 do
+    if self.dict[s:sub(i,i)] then
+      t[self.dict[s:sub(i,i)]][#s - i + 1] = 1
+    end
+  end
+  return localize(t:transpose(1,2):contiguous())
+end
+
+
+function LSTMEntChar:tok2characterIdx(token)
+
+  local s = token:lower()
+  local output = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
+  for i = #s, math.max(#s - self.tok_length + 1, 1), -1 do
+    c = s:sub(i,i)
+    if self.dict[c] then
+      output[#s-i+1] = self.dict[c]
+    else
+      output[#s-i+1] = #self.alphabet+1
+    end
+  end
+  return localize(output)
+end
+
+
+
+
+
+
+
+
+
+
+
 
 
 
