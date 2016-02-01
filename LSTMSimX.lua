@@ -409,7 +409,7 @@ function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
     if k <= #lsent_X then
       tok = lsent_X[k]
       --tok_vec = self:tok2characterIdx(tok)
-      tok_vec =self:tok_vec(tok)
+      tok_vec =self:tok2vec(tok)
       table.insert(linputs, tok_vec)
     else
       --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
@@ -435,7 +435,7 @@ function LSTMSimX:predict(lsent, lsent_X, rsent, rsent_X)
     if k <= #rsent_X then
       tok = rsent_X[k]
       --tok_vec = self:tok2characterIdx(tok)
-      tok_vec =self:tok_vec(tok)
+      tok_vec =self:tok2vec(tok)
       table.insert(rinputs, tok_vec)
     else
       --tok_vec = torch.Tensor(self.tok_length):fill(#self.alphabet+1)
