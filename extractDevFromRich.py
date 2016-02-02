@@ -12,7 +12,7 @@ data_dir = os.path.join(base_dir, 'data')
 count = 0
 
 with open(os.path.join(data_dir, 'SICK_trial_big.txt'), 'w') as f1, \
-	open(os.path.join(data_dir, 'SICK_train_big.txt'), 'w') as f2, \
+	open(os.path.join(data_dir, 'SICK_train_big.txt'), 'w') as f2:
 	f1.write("pair_ID	sentence_A	sentence_B	relatedness_score	entailment_judgment\n")
 	f2.write("pair_ID	sentence_A	sentence_B	relatedness_score	entailment_judgment\n")
 
