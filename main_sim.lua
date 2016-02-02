@@ -73,11 +73,11 @@ local dev_dir = data_dir .. 'dev/'
 local test_dir = data_dir .. 'test/'
 local train_dataset = read_dataset(train_dir, vocab)
 local dev_dataset = read_dataset(dev_dir, vocab)
-local test_dataset = read_dataset(test_dir, vocab)
+
 
 printf('num train = %d\n', train_dataset.size)
 printf('num dev = %d\n', dev_dataset.size)
-printf('num test = %d\n', test_dataset.size)
+
 
 -- get paths
 local file_idx = 1
@@ -127,6 +127,7 @@ local train_start = sys.clock()
 local best_dev_score = -1.0
 local best_dev_model = model
 
+
 header('Training model')
 for i = 1, num_epochs do
   local start = sys.clock()
@@ -159,34 +160,40 @@ for i = 1, num_epochs do
 end
 
 printf('finished training in %.2fs\n', sys.clock() - train_start)
-
--- evaluate
-header('Evaluating on test set')
-printf('-- using model with dev score = %.4f\n', best_dev_score)
-local test_predictions = best_dev_model:predict_dataset(test_dataset)
-local test_score = pearson(test_predictions, test_dataset.sim_labels)
-printf('-- test score: %.4f\n', test_score)
-
-
--- create predictions and model directories if necessary
-if lfs.attributes(predictions_dir) == nil then
-  lfs.mkdir(predictions_dir)
-end
-
+--write models to disk
 if lfs.attributes(models_dir) == nil then
   lfs.mkdir(models_dir)
 end
 
--- write predictions to disk
-local predictions_file = torch.DiskFile(predictions_save_path, 'w')
-print('writing predictions to ' .. predictions_save_path)
-for i = 1, test_predictions:size(1) do
-  predictions_file:writeFloat(test_predictions[i])
-end
-predictions_file:close()
-
---write models to disk
 print('writing model to ' .. model_save_path)
 best_dev_model:save(model_save_path)
 
 
+header('Evaluating on test set')
+printf('-- using model with dev score = %.4f\n', best_dev_score)
+
+local fs = {"answer-answer", "headlines", "plagiarism", "postediting", "question-question"}
+
+for i=1, #fs do
+  fn = fs[i]
+  print(fn)
+  local test_dataset = read_test_dataset(test_dir, fn, vocab)
+  printf('num test = %d\n', test_dataset.size)
+
+  local test_predictions = best_dev_model:predict_dataset(test_dataset)
+  --local test_score = pearson(test_predictions, test_dataset.sim_labels)
+  --printf('-- test score: %.4f\n', test_score)
+
+  -- create predictions and model directories if necessary
+  if lfs.attributes(predictions_dir) == nil then
+    lfs.mkdir(predictions_dir)
+  end
+
+  -- write predictions to disk
+  local predictions_file = torch.DiskFile(predictions_save_path .. "." .. fn, 'w')
+  print('writing predictions to ' .. predictions_save_path)
+  for i = 1, test_predictions:size(1) do
+    predictions_file:writeFloat(test_predictions[i])
+  end
+  predictions_file:close()
+end

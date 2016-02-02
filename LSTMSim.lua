@@ -40,7 +40,7 @@ function LSTMSim:__init(config)
     error('invalid LSTM type: ' .. self.structure)
   end
 
-  self.sim_module = self:new_sim_module_conv1d()
+  self.sim_module = self:new_sim_module()
 
   local modules = nn.Parallel()
     :add(self.llstm)

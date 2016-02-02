@@ -120,7 +120,15 @@ if __name__ == '__main__':
     dev_dir = os.path.join(data_dir, 'dev')
     test_dir = os.path.join(data_dir, 'test')
 
+    test_dir_answer_answer = os.path.join(test_dir, "answer-answer")
+    test_dir_headlines = os.path.join(test_dir, "headlines")
+    test_dir_plagiarism = os.path.join(test_dir, "plagiarism")
+    test_dir_postediting = os.path.join(test_dir, "postediting")
+    test_dir_question_question = os.path.join(test_dir, "question-question")
+
     make_dirs([train_dir, dev_dir, test_dir])
+
+    make_dirs([test_dir_answer_answer, test_dir_headlines, test_dir_plagiarism, test_dir_postediting, test_dir_question_question])
 
     # java classpath for calling Stanford parser
     classpath = ':'.join([
@@ -131,19 +139,35 @@ if __name__ == '__main__':
     # split into separate files
     split(os.path.join(data_dir, 'SICK_train_big.txt'), train_dir)
     split(os.path.join(data_dir, 'SICK_trial_big.txt'), dev_dir)
-    split(os.path.join(data_dir, 'SICK_test_annotated.txt'), test_dir)
+    split(os.path.join(data_dir, 'SICK_test_answer-answer.txt'), test_dir_answer_answer)
+    split(os.path.join(data_dir, 'SICK_test_headlines.txt'), test_dir_headlines)
+    split(os.path.join(data_dir, 'SICK_test_plagiarism.txt'), test_dir_plagiarism)
+    split(os.path.join(data_dir, 'SICK_test_postediting.txt'), test_dir_postediting)
+    split(os.path.join(data_dir, 'SICK_test_question-question.txt'), test_dir_question_question)
 
     # parse sentences
     
     parse(train_dir, cp=classpath)
     parse(dev_dir, cp=classpath)
-    parse(test_dir, cp=classpath)
+
+    parse(test_dir_answer_answer, cp=classpath)
+    parse(test_dir_headlines, cp=classpath)
+    parse(test_dir_plagiarism, cp=classpath)
+    parse(test_dir_postediting, cp=classpath)
+    parse(test_dir_question_question, cp=classpath)
     
 
+    all_paths = []
+    for fs in glob.glob(os.path.join(data_dir, '*/*.toks')):
+        all_paths.append(fs)
+
+    for fs in glob.glob(os.path.join(data_dir, '*/*/*.toks')):
+        all_paths.append(fs)
+
+    for fs in all_paths:
+        print fs
+
     # get vocabulary
-    build_vocab(
-        glob.glob(os.path.join(data_dir, '*/*.toks')),
-        os.path.join(data_dir, 'vocab-cased.txt'),
-        lowercase=False)
+    build_vocab(all_paths, os.path.join(data_dir, 'vocab-cased.txt'),lowercase=False)
 
     build_word2Vector(os.path.join("../NLP-Tools", 'glove.840B.300d.txt'), data_dir, 'vocab-cased.txt')

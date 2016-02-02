@@ -69,3 +69,18 @@ function read_dataset(dir, vocab)
 
   return dataset
 end
+
+function read_test_dataset(dir, fn, vocab)
+
+  local dataset = {}
+  dataset.vocab = vocab
+
+  dataset.lsents_S = read_charsequence(dir .. fn .."/"..'a.toks')
+  dataset.rsents_S = read_charsequence(dir .. fn .."/"..'b.toks')
+
+  dataset.lsents = read_sentences(dir .. fn .."/"..'a.toks', vocab)
+  dataset.rsents = read_sentences(dir .. fn .."/"..'b.toks', vocab)
+  dataset.size = #dataset.lsents
+
+  return dataset
+end
