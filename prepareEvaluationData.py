@@ -11,31 +11,33 @@ pastData_dir = os.path.join(base_dir, 'pastData')
 gs = glob.glob(os.path.join(pastData_dir, '*/STS.gs.*.txt'))
 inputs = glob.glob(os.path.join(pastData_dir, '*/STS.input.*.txt'))
 
-train_id = 1
-trial_id = 1
+id = 1
+
+with open(os.path.join(data_dir, 'SICK_train_rich.txt'), 'w') as f:
+	f.write("pair_ID	sentence_A	sentence_B	relatedness_score	entailment_judgment\n")
+	for g, i in zip(gs,inputs):
+ 		with open(g, 'r') as gf, open(i, 'r') as iptf:
+ 			for score, line in zip(gf, iptf):
+ 				if not re.match(r'\w+', score):
+ 					continue
+ 				line = re.sub("#", "", line)
+ 				a,b = line.strip().split('\t')
+ 				f.write(str(id)+"\t"+a+"\t"+b+"\t"+score.strip()+"\t"+"ENTAILMENT\n")
+ 				id += 1
+
 
 with open(os.path.join(data_dir, 'SICK_trial_big.txt'), 'w') as f1, \
 	open(os.path.join(data_dir, 'SICK_train_big.txt'), 'w') as f2:
-	f1.write("pair_ID	sentence_A	sentence_B	relatedness_score	entailment_judgment\n")
-	f2.write("pair_ID	sentence_A	sentence_B	relatedness_score	entailment_judgment\n")
-
-	for g, i in zip(gs,inputs):
-		with open(g, 'r') as gf, open(i, 'r') as iptf:
-			
-			for c, (score, line) in enumerate(zip(gf, iptf)):
-
-				if not re.match(r'\w+', score):
-					continue
-
-				line = re.sub("#", "", line)
-				a,b = line.strip().split('\t')
-
-				if c % 20 == 0:
-					f1.write(str(trial_id)+"\t"+a+"\t"+b+"\t"+score.strip()+"\t"+"ENTAILMENT\n")
-					trial_id += 1
-				else:
-					f2.write(str(train_id)+"\t"+a+"\t"+b+"\t"+score.strip()+"\t"+"ENTAILMENT\n")
-					train_id += 1
+ 	f1.write("pair_ID	sentence_A	sentence_B	relatedness_score	entailment_judgment\n")
+ 	f2.write("pair_ID	sentence_A	sentence_B	relatedness_score	entailment_judgment\n")
+ 
+ 	with open(os.path.join(data_dir, 'SICK_train_rich.txt'), 'rb') as f:
+ 		f.readline()
+ 		for i, line in enumerate(f):
+ 			if i % 20 == 0:
+ 				f1.write(line)
+ 			else:
+ 				f2.write(line)
 								
 test_dir = os.path.join(base_dir, 'sts2016-english-v1.1')
 test_fs = ["answer-answer", "headlines", "plagiarism", "postediting", "question-question"]
